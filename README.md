@@ -8,10 +8,10 @@ This repository is built on top of [JamMa](https://github.com/leoluxxx/JamMa). C
 
 ## Highlights
 
-- Training and evaluation code for DeT.
+- Evaluation code for DeT.
 - Demo script for matching an image pair.
 - Reproduction scripts for MegaDepth and ScanNet style evaluation.
-- Public release hygiene: checkpoints, datasets, logs, and generated files are intentionally not tracked by Git.
+- Checkpoints, datasets, logs, and generated files are intentionally not tracked by Git.
 
 ## Installation
 
@@ -26,11 +26,11 @@ pip install mamba-ssm==2.0.3
 
 ## Checkpoints
 
-Checkpoints are not committed to this repository. Put downloaded weights under `weights/` and pass the path with `--ckpt_path`.
+Checkpoint files are not committed to this repository. Download the DeT checkpoint separately and pass its path with `--ckpt_path`.
 
-```text
-weights/
-  det.ckpt
+```bash
+python demo/demo.py --ckpt_path /path/to/det.ckpt
+python test.py configs/data/megadepth_test_1500.py configs/jamma/outdoor/test.py --ckpt_path /path/to/det.ckpt
 ```
 
 > TODO before public release: upload the DeT checkpoint to GitHub Releases, Hugging Face, or another stable artifact host, then add the download URL here.
@@ -43,7 +43,7 @@ For compatibility experiments, scripts that accept `--ckpt_path official` load t
 python demo/demo.py \
   --image1 /path/to/image0.jpg \
   --image2 /path/to/image1.jpg \
-  --ckpt_path weights/det.ckpt \
+  --ckpt_path /path/to/det.ckpt \
   --output_dir demo/output
 ```
 
@@ -55,7 +55,7 @@ python demo/demo.py --ckpt_path official
 
 ## Evaluation
 
-Prepare the testing subsets and dataset indices as described in [docs/TRAINING.md](docs/TRAINING.md), then run:
+Prepare the testing subsets and dataset indices, then run:
 
 ```bash
 bash scripts/reproduce_test/outdoor.sh
@@ -64,26 +64,14 @@ bash scripts/reproduce_test/indoor.sh
 
 Edit `ckpt_path` in the script or pass a checkpoint path directly to `test.py`.
 
-## Training
-
-Follow [docs/TRAINING.md](docs/TRAINING.md) to prepare MegaDepth and ScanNet. Then run:
-
-```bash
-bash scripts/reproduce_train/outdoor.sh
-```
-
-Training logs and checkpoints are written to local output directories and are ignored by Git.
-
 ## Repository Layout
 
 ```text
 configs/                 Configuration files
 demo/                    Pair matching demo
-docs/                    Dataset and training notes
+docs/                    Dataset setup notes
 scripts/reproduce_test/  Evaluation entry points
-scripts/reproduce_train/ Training entry points
 src/                     Model, data, loss, and utility code
-train.py                 Training entry point
 test.py                  Evaluation entry point
 ```
 

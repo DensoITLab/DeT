@@ -35,8 +35,6 @@ lightning_logs/
 *.onnx
 *.npy
 *.npz
-weights/*
-!weights/README.md
 
 # OS and editor files
 .DS_Store
