@@ -1,0 +1,7 @@
+[
+  { "scene": "reichstag", "bag_size": 100, "num_in_bag": [100] }
+,
+  { "scene": "sacre_coeur", "bag_size": 100, "num_in_bag": [100] }
+,
+  { "scene": "st_peters_square", "bag_size": 100, "num_in_bag": [100] }
+]
