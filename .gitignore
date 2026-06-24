@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environments
+.env
+.env.*
+.venv/
+venv/
+env/
+conda-meta/
+
+# Local data and artifacts
+data/
+datasets/
+dump/
+outputs/
+output*/
+demo/output*/
+jamma_log/
+logs/
+wandb/
+lightning_logs/
+
+# Checkpoints and generated arrays
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.npy
+*.npz
+weights/*
+!weights/README.md
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

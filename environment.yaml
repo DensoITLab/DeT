@@ -1,4 +1,4 @@
-name: jamma
+name: det
 channels:
   - pytorch
   - nvidia

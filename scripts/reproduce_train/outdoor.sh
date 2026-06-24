@@ -6,7 +6,7 @@ PROJECT_DIR="${SCRIPTPATH}/../../"
 export PYTHONPATH=$PROJECT_DIR:$PYTHONPATH
 cd $PROJECT_DIR
 
-# to reproduced the results in our paper, please use:
+# Use this entry point to reproduce the outdoor training setup.
 TRAIN_IMG_SIZE=832
 data_cfg_path="configs/data/megadepth_trainval_${TRAIN_IMG_SIZE}.py"
 main_cfg_path="configs/jamma/outdoor/final.py"
@@ -15,7 +15,7 @@ n_gpus_per_node=1
 torch_num_workers=4
 batch_size=2
 pin_memory=true
-exp_name="jamma"
+exp_name="det"
 
 python -u ./train.py \
     ${data_cfg_path} \
