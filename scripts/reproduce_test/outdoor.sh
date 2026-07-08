@@ -9,13 +9,13 @@ cd $PROJECT_DIR
 
 data_cfg_path="configs/data/megadepth_test_1500.py"
 main_cfg_path="configs/jamma/outdoor/test.py"
-ckpt_path="weights/det.ckpt"  # Set this to your DeT checkpoint.
+ckpt_path="/path/to/det.ckpt"
 dump_dir="dump/det_outdoor"
 profiler_name="inference"
-n_nodes=1  # Manually keep this the same as --nodes.
+n_nodes=1
 n_gpus_per_node=-1
 torch_num_workers=4
-batch_size=1  # Per GPU.
+batch_size=1
 
 python -u ./test.py \
     ${data_cfg_path} \

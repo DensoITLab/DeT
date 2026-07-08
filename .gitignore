@@ -27,6 +27,7 @@ jamma_log/
 logs/
 wandb/
 lightning_logs/
+sfm_txt_results/
 
 # Checkpoints and generated arrays
 *.ckpt
