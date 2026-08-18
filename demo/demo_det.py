@@ -15,6 +15,12 @@ from loguru import logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
+DEFAULT_IMAGE_PATHS = [
+    PROJECT_ROOT / "demo" / "aseets" / "sample1.jpg",
+    PROJECT_ROOT / "demo" / "aseets" / "sample2.jpg",
+    PROJECT_ROOT / "demo" / "aseets" / "sample3.jpg",
+]
+DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
 
 from src.config.default import get_cfg_defaults
 from src.jamma.backbone import CovNextV2_nano
@@ -46,15 +52,27 @@ class DeTMatcher(torch.nn.Module):
         return data
 
 
+def resolve_input_path(path_like) -> Path:
+    path = Path(path_like)
+    if path.is_absolute() or path.exists():
+        return path
+    return PROJECT_ROOT / path
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Run DeT/JamMa tracking on a sequence of three or more images.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--images", nargs="+", default=None, help="Ordered image paths.")
+    parser.add_argument(
+        "--images",
+        nargs="+",
+        default=None,
+        help="Ordered image paths. Defaults to demo/aseets/sample1.jpg sample2.jpg sample3.jpg.",
+    )
     parser.add_argument("--image_dir", type=Path, default=None, help="Directory with ordered images.")
     parser.add_argument("--pattern", type=str, default="*.jpg", help="Glob pattern used with --image_dir.")
-    parser.add_argument("--ckpt_path", type=str, required=True, help="Path to a DeT checkpoint.")
+    parser.add_argument("--ckpt_path", type=str, default=DEFAULT_CKPT_PATH, help="Path to a DeT checkpoint.")
     parser.add_argument("--main_cfg_path", type=str, default="configs/jamma/outdoor/test.py")
     parser.add_argument("--output_dir", type=Path, default=Path("demo/output_det"))
     parser.add_argument("--resize", type=int, default=832)
@@ -68,9 +86,13 @@ def parse_args():
 
 
 def collect_images(args) -> List[Path]:
-    images = [Path(p) for p in (args.images or [])]
-    if args.image_dir is not None:
-        images.extend(sorted(p for p in args.image_dir.glob(args.pattern) if p.is_file()))
+    if args.images is None and args.image_dir is None:
+        images = list(DEFAULT_IMAGE_PATHS)
+    else:
+        images = [resolve_input_path(p) for p in (args.images or [])]
+        if args.image_dir is not None:
+            image_dir = resolve_input_path(args.image_dir)
+            images.extend(sorted(p for p in image_dir.glob(args.pattern) if p.is_file()))
 
     if len(images) < 3:
         raise ValueError("DeT demo requires at least three ordered images.")
@@ -290,6 +312,9 @@ def draw_tracks(image_paths: List[Path], tracks: List[Dict], out_path: Path, max
 def main():
     args = parse_args()
     image_paths = collect_images(args)
+    if args.ckpt_path != "official":
+        args.ckpt_path = str(resolve_input_path(args.ckpt_path))
+    args.main_cfg_path = str(resolve_input_path(args.main_cfg_path))
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device(args.device if args.device == "cuda" and torch.cuda.is_available() else "cpu")

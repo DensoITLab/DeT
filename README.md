@@ -26,28 +26,16 @@ pip install mamba-ssm==2.0.3
 
 `mamba-ssm` depends on the local CUDA/PyTorch setup. Installing a wheel that matches your CUDA version is usually faster than building from source.
 
-## GB10 / aarch64 Container
-
-For NVIDIA GB10 / DGX Spark aarch64, use the Apptainer definition below. Build it on the GB10 machine so Apptainer pulls the arm64 variant of the multi-arch NVIDIA NGC PyTorch image. The definition does not overwrite the CUDA-enabled PyTorch stack with old x86/CUDA 11.8 wheels.
-PoseLib is built from source because the PyPI release does not provide a Linux aarch64 wheel for the NGC Python runtime.
-The container also prepends `/opt/hpcx/ucx/lib` to `LD_LIBRARY_PATH`; this avoids the NGC HPC-X `libucc.so` / UCX symbol mismatch that can otherwise appear while building CUDA extensions.
-
-```bash
-apptainer build det-gb10.sif containers/det_gb10_aarch64.def
-apptainer exec --nv det-gb10.sif python demo/demo_det.py \
-  --images img0.jpg img1.jpg img2.jpg \
-  --ckpt_path /path/to/det.ckpt
-```
-
 ## Checkpoints
 
-Download the DeT checkpoint separately and pass its path to the scripts:
+Download the DeT checkpoint separately and place it at `weights/jamma.ckpt` for the default demo:
 
 ```bash
-python demo/demo_det.py --images img0.jpg img1.jpg img2.jpg --ckpt_path /path/to/det.ckpt
+python demo/demo_det.py
 ```
 
-The IMC SfM script uses `--jamma_ckpt`, and the IMC tracking script uses `--ckpt_path`. Scripts that accept `official` load the upstream JamMa checkpoint for compatibility checks.
+By default, the demo reads `weights/jamma.ckpt` and `demo/aseets/sample1.jpg`, `sample2.jpg`, `sample3.jpg`.
+The IMC SfM script uses `--jamma_ckpt`, and the tracking scripts use `--ckpt_path`. Scripts that accept `official` load the upstream JamMa checkpoint for compatibility checks.
 The paper evaluation scripts use `CKPT_PATH`:
 
 ```bash
@@ -56,7 +44,13 @@ CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_all.sh
 
 ## DeT Demo
 
-The demo runs only the DeT tracking path and requires at least three ordered images.
+The demo runs only the DeT tracking path. With the default sample files and checkpoint in place, it runs without arguments:
+
+```bash
+python demo/demo_det.py
+```
+
+It also accepts explicit image paths:
 
 ```bash
 python demo/demo_det.py \
