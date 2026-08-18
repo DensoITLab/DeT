@@ -26,6 +26,17 @@ pip install mamba-ssm==2.0.3
 
 `mamba-ssm` depends on the local CUDA/PyTorch setup. Installing a wheel that matches your CUDA version is usually faster than building from source.
 
+## GB10 / aarch64 Container
+
+For NVIDIA GB10 / DGX Spark aarch64, use the Apptainer definition below. Build it on the GB10 machine so Apptainer pulls the arm64 variant of the multi-arch NVIDIA NGC PyTorch image. The definition does not overwrite the CUDA-enabled PyTorch stack with old x86/CUDA 11.8 wheels.
+
+```bash
+apptainer build det-gb10.sif containers/det_gb10_aarch64.def
+apptainer exec --nv det-gb10.sif python demo/demo_det.py \
+  --images img0.jpg img1.jpg img2.jpg \
+  --ckpt_path /path/to/det.ckpt
+```
+
 ## Checkpoints
 
 Download the DeT checkpoint separately and pass its path to the scripts:

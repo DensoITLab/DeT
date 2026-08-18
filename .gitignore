@@ -33,6 +33,7 @@ conda-meta/
 /checkpoints/
 /weights/
 /weight/
+*.sif
 
 # Checkpoints and generated arrays
 *.ckpt
