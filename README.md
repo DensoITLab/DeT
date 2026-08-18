@@ -6,17 +6,14 @@
 
 Official PyTorch implementation of **Detect by Track: Making Detector-Free Matcher Trackable**.
 
-Detector-free matchers such as EDM and JamMa provide strong pairwise matching accuracy and runtime, but their implicit keypoint selection can fragment tracks across multiple views. DeT directly steers the local similarity matrix from an arbitrary sub-pixel query location, allowing a detector-free matcher to produce connected tracks while preserving its matching-oriented keypoint selection.
+DeT makes detector-free matching trackable across multiple views by steering the local similarity matrix from arbitrary sub-pixel query locations. This release implements DeT on top of [JamMa](https://github.com/leoluxxx/JamMa) and is intentionally scoped to:
 
-This release implements DeT on top of [JamMa](https://github.com/leoluxxx/JamMa). Some configuration keys and internal module names still use `jamma` to stay compatible with the upstream code structure.
+- DeT sequence demo with three or more ordered images.
+- Paper evaluation launch scripts for IMC and MegaDepth scenes 0015/0022.
+- IMC/MegaDepth multi-view tracking and online SfM evaluation.
 
-## Highlights
-
-- DeT/JamMa pair matching demo.
-- MegaDepth and ScanNet two-view evaluation scripts.
-- IMC/SfM and multi-view tracking evaluation scripts.
-- MegaDepth training entry point and data setup notes.
-- Checkpoints, datasets, logs, and generated evaluation files are intentionally excluded from Git.
+Checkpoints, datasets, logs, and generated evaluation files are intentionally excluded from Git. Some internal module names and config keys still use `jamma` for compatibility with the upstream JamMa code structure.
+The upstream JamMa files are kept in the tree for compatibility; the public DeT demo entry point is `demo/demo_det.py`.
 
 ## Installation
 
@@ -27,69 +24,76 @@ pip install -r requirements.txt
 pip install mamba-ssm==2.0.3
 ```
 
-`mamba-ssm` depends on the local CUDA/PyTorch setup. Installing a wheel that matches your CUDA version is usually faster and more reliable than building from source.
+`mamba-ssm` depends on the local CUDA/PyTorch setup. Installing a wheel that matches your CUDA version is usually faster than building from source.
 
 ## Checkpoints
 
-Checkpoint files are not committed to this repository. Download the DeT checkpoint separately and pass its path with `--ckpt_path` or `--jamma_ckpt`, depending on the script.
+Download the DeT checkpoint separately and pass its path to the scripts:
 
 ```bash
-python demo/demo.py --ckpt_path /path/to/det.ckpt
-python test.py configs/data/megadepth_test_1500.py configs/jamma/outdoor/test.py --ckpt_path /path/to/det.ckpt
+python demo/demo_det.py --images img0.jpg img1.jpg img2.jpg --ckpt_path /path/to/det.ckpt
 ```
 
-For compatibility checks, scripts that accept `--ckpt_path official` load the upstream JamMa checkpoint from the JamMa release.
-
-## Demo
+The IMC SfM script uses `--jamma_ckpt`, and the IMC tracking script uses `--ckpt_path`. Scripts that accept `official` load the upstream JamMa checkpoint for compatibility checks.
+The paper evaluation scripts use `CKPT_PATH`:
 
 ```bash
-python demo/demo.py \
-  --image1 /path/to/image0.jpg \
-  --image2 /path/to/image1.jpg \
+CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_all.sh
+```
+
+## DeT Demo
+
+The demo runs only the DeT tracking path and requires at least three ordered images.
+
+```bash
+python demo/demo_det.py \
+  --images /path/to/image0.jpg /path/to/image1.jpg /path/to/image2.jpg \
   --ckpt_path /path/to/det.ckpt \
-  --output_dir demo/output
+  --output_dir demo/output_det
 ```
 
-## Data
-
-MegaDepth and ScanNet follow the same data organization as JamMa. See [docs/TRAINING.md](docs/TRAINING.md) for dataset and index setup. IMC/SfM and tracking scripts expect bag files, images, calibration, and depth maps under `data/`.
-
-## Evaluation
-
-Edit checkpoint and data paths inside the scripts, then run:
+You can also pass a directory:
 
 ```bash
-bash scripts/reproduce_test/outdoor.sh
-bash scripts/reproduce_test/indoor.sh
-bash scripts/reproduce_test/imc_sfm.sh
-bash scripts/reproduce_test/imc_tracking.sh
-bash scripts/reproduce_test/megadepth_tracking.sh
+python demo/demo_det.py \
+  --image_dir /path/to/sequence \
+  --pattern "*.jpg" \
+  --ckpt_path /path/to/det.ckpt
 ```
 
-The two-view entry point is `test.py`. The online SfM benchmark is `test_imc_sfm.py`. The multi-view tracking benchmarks are `test_imc_tracking.py` and `test_megadepth_tracking.py`; they write summaries under `outputs/`.
+The demo writes `tracks.json` and `tracks.png` under the output directory.
 
-## Training
+## Paper Evaluation
+
+The paper evaluation scripts run 5-frame bags for IMC and MegaDepth. Set the checkpoint path and, if needed, override dataset roots with environment variables.
 
 ```bash
-bash scripts/reproduce_train/outdoor.sh
+CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_imc.sh
+CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_megadepth_0015_0022.sh
+CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_all.sh
 ```
 
-The training script writes TensorBoard logs and checkpoints under `det_log/`.
+The evaluation entry points are:
+
+- `scripts/reproduce_test/paper_imc.sh`: IMC `reichstag`, `sacre_coeur`, and `st_peters_square`.
+- `scripts/reproduce_test/paper_megadepth_0015_0022.sh`: MegaDepth `0015` and `0022`.
+- `test_imc_tracking.py`: IMC multi-view DeT track evaluation with epipolar, depth visibility, runtime, and FLOPs summaries.
+- `test_megadepth_tracking.py`: MegaDepth multi-view DeT track evaluation for 5-frame bags.
+- `test_imc_sfm.py`: online SfM evaluation used for IMC-style and MegaDepth 5-frame bags.
+
+Default data locations are `data/imc` and `data/megadepth`. Override them with `IMC_ROOT`, `MEGADEPTH_ROOT`, or `MEGADEPTH_SFM_ROOT`. Results are written under `outputs/paper/imc` and `outputs/paper/megadepth`.
+The MegaDepth script also accepts `15 22` and normalizes them to `0015 0022`.
 
 ## Repository Layout
 
 ```text
-configs/                   Configuration files
-demo/                      Pair matching demo
-docs/                      Dataset setup notes
-scripts/reproduce_test/    Evaluation entry points
-scripts/reproduce_train/   Training entry points
-src/                       Model, data, losses, and utilities
-test.py                    MegaDepth/ScanNet two-view evaluation
-test_imc_sfm.py            IMC online SfM evaluation
+configs/                   Inference and image preprocessing configs
+demo/demo_det.py           DeT sequence demo for 3+ images
+scripts/reproduce_test/    Paper evaluation launch scripts
+src/                       DeT/JamMa model and utility code
+test_imc_sfm.py            IMC-style online SfM evaluation
 test_imc_tracking.py       IMC multi-view tracking evaluation
 test_megadepth_tracking.py MegaDepth multi-view tracking evaluation
-train.py                   MegaDepth training entry point
 ```
 
 ## Acknowledgements

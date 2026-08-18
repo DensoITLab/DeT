@@ -1,0 +1,10 @@
+from configs.data.base import cfg
+
+cfg.DATASET.TEST_DATA_SOURCE = "IMC"
+cfg.DATASET.TEST_DATA_ROOT = "data/imc"
+cfg.DATASET.TEST_NPZ_ROOT = None
+cfg.DATASET.TEST_LIST_PATH = None
+
+cfg.DATASET.MGDPT_IMG_RESIZE = 832
+cfg.DATASET.MIN_OVERLAP_SCORE_TEST = 0.0
+cfg.DATASET.MGDPT_IMG_PAD = True

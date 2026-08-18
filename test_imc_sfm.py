@@ -912,14 +912,25 @@ def save_final_summary_txt(
     out_root: Path,
     method: str,
     dataset_name: str,
+    scene_name: str,
     summary_text: str,
 ):
-    save_dir = out_root / method / dataset_name
+    save_dir = out_root / method / dataset_name / scene_name
     save_dir.mkdir(parents=True, exist_ok=True)
 
     txt_path = save_dir / "final_summary.txt"
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(summary_text)
+
+
+def _json_default(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 def filter_full_length_tracks(tracks: Dict[int, dict], bag_size: int) -> Dict[int, dict]:
@@ -956,6 +967,7 @@ def main():
         config.merge_from_file(args.main_cfg_path)
         config.merge_from_file(args.data_cfg_path)
 
+        config.JAMMA.DET.USE_DET = True
         config.JAMMA.DET.SEARCH_RADIUS = 832 * 2**0.5
         config.JAMMA.DET.FINE_THR = 0.0
         config.JAMMA.USE_COMPILE = False
@@ -1140,7 +1152,7 @@ def main():
             "sfm": sfm_res,
         })
 
-    dataset_name_for_save = "phototourism" if use_dataset == "IMC" else "megadepth"
+    dataset_name_for_save = args.dataset_name
 
     summary_lines = []
     summary_lines.append("=== Global Summary ===")
@@ -1177,10 +1189,9 @@ def main():
             parts.append(f"{k.replace('macc', 'mAcc')}={v * 100:.2f}" if np.isfinite(v) else f"{k.replace('macc', 'mAcc')}=nan")
         return "  ".join(parts)
 
-    global scene
     summary_lines.append("")
     summary_lines.append("=== AUC Metrics (IMC-like; error=max(rot, tdir) deg; FAILURES INCLUDED) ===")
-    summary_lines.append(f"method {args.method}, scene {scene}")
+    summary_lines.append(f"method {args.method}, dataset {args.dataset_name}, scene {args.scene_name}")
     summary_lines.append(f"[Multiview-like] final 0->N :  {_fmt_auc(auc_final)}")
     summary_lines.append(f"                 {_fmt_macc(macc_final)}")
     summary_lines.append(f"[Stereo-like]    RPE edges  :  {_fmt_auc(auc_rpe)}")
@@ -1198,10 +1209,13 @@ def main():
         out_root=Path("./sfm_txt_results"),
         method=args.method,
         dataset_name=dataset_name_for_save,
+        scene_name=args.scene_name,
         summary_text=summary_text,
     )
 
     summary = {
+        "dataset_name": args.dataset_name,
+        "scene_name": args.scene_name,
         "pairs_total": int(total_pairs),
         "num_bags": int(len(bag_files)),
         "matcher_avg_time_per_pair_ms": float(total_match_time_ms / total_pairs) if total_pairs > 0 else float("nan"),
@@ -1226,7 +1240,8 @@ def main():
 
     if args.out_json is not None:
         payload = {"summary": summary, "bags": all_bag_results}
-        args.out_json.write_text(json.dumps(payload, indent=2))
+        args.out_json.parent.mkdir(parents=True, exist_ok=True)
+        args.out_json.write_text(json.dumps(payload, indent=2, default=_json_default))
         print(f"\nSaved: {args.out_json}")
 
 
@@ -1256,6 +1271,11 @@ def parse_args():
     ap.add_argument('--data_cfg_path', type=str, default="configs/data/megadepth_test_1500.py")
     ap.add_argument('--main_cfg_path', type=str, default="configs/jamma/outdoor/test.py")
     ap.add_argument('--profiler_name', type=str, default="inference")
+    ap.add_argument("--dataset_name", type=str,
+                    default="phototourism" if use_dataset == "IMC" else "megadepth",
+                    help="Dataset label stored in output files")
+    ap.add_argument("--scene_name", type=str, default=scene,
+                    help="Scene label stored in output files")
 
     ap.add_argument("--bag_size", type=int, default=5)
     ap.add_argument("--flip_w2c", action="store_true")

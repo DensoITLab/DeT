@@ -122,6 +122,10 @@ def parse_args():
     parser.add_argument('--save_summary_json', type=Path,
                         default=Path('outputs/fig6_megadepth_tracking_summary.json'),
                         help='Only global summary dict per method')
+    parser.add_argument('--dataset_name', type=str, default='megadepth',
+                        help='Dataset label stored in output JSON')
+    parser.add_argument('--scene_name', type=str, default=scene,
+                        help='Scene label stored in output JSON')
 
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument(
@@ -131,13 +135,23 @@ def parse_args():
         default=['jamma'],
         help=(
             'Which methods to run. '
-            'Subset of {jamma, jamma_legacy}. '
-            'Example: --methods jamma jamma_legacy'
+            'Subset of {jamma, det-jamma, jamma_legacy}. '
+            'Example: --methods det-jamma'
         ),
     )
 
     parser = pl.Trainer.add_argparse_args(parser)
     return parser.parse_args()
+
+
+def _json_default(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, Path):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 # ============================================================
@@ -1692,6 +1706,7 @@ def main():
     config.merge_from_file(args.data_cfg_path)
     pl.seed_everything(config.TRAINER.SEED)
 
+    config.JAMMA.DET.USE_DET = True
     config.JAMMA.DET.SEARCH_RADIUS = 832 * 2**0.5
     config.JAMMA.DET.FINE_THR = 0.0
     config.JAMMA.USE_COMPILE = False
@@ -1719,11 +1734,13 @@ def main():
         # --- すべてのメソッド定義（ここから --methods でフィルタする） ---
     all_methods: Dict[str, Callable[..., Any]] = {
         "jamma": run_jamma_pair,
+        "det-jamma": run_jamma_pair,
         "jamma_legacy": run_jamma_pair,
     }
 
     all_methods_kwargs: Dict[str, dict] = {
         "jamma": {"jamma": jamma_model},
+        "det-jamma": {"jamma": jamma_model},
         "jamma_legacy": {"jamma": jamma_legacy_model},
     }
 
@@ -1758,9 +1775,9 @@ def main():
             is_legacy = (method_name in ["jamma_legacy"])
 
             #compute_depth_gt_from0 = (method_name in ["jamma", "eloftr"])
-            compute_depth_gt_from0 = (method_name == "jamma")  # ★ JamMa のみ GT visibility 計算
+            compute_depth_gt_from0 = (method_name in ["jamma", "det-jamma"])
 
-            if method_name == "jamma" or method_name == "jamma_legacy":
+            if method_name in ["jamma", "det-jamma", "jamma_legacy"]:
                 _ = evaluate_bag_with_tracks(
                         bag_file=bf,
                         bag_size=args.bag_size,
@@ -1856,8 +1873,8 @@ def main():
                     f"sym<=3px={stats_k_px_sym['ratios'][1]:.3f}"
                 )
 
-            # ★ JamMa のとき、bag ごとの depth GT visibility も print
-            if method_name == "jamma" and res['depth_gt_visibility_from0'] is not None:
+            # Print depth GT visibility for the DeT-path JamMa variants.
+            if method_name in ["jamma", "det-jamma"] and res['depth_gt_visibility_from0'] is not None:
                 vis = res['depth_gt_visibility_from0']
                 print("  --- depth-GT visibility from image0 (JamMa 0→1 mk0 all) ---")
                 print(f"    initial_valid_points={vis['num_points_initial']}")
@@ -1908,7 +1925,8 @@ def main():
     # ---- 手法ごとに Global aggregation ----
     summary: Dict[str, dict] = {}
     epi_thr_0N = 1e-4
-    summary['scene_name'] = scene
+    summary['dataset_name'] = args.dataset_name
+    summary['scene_name'] = args.scene_name
 
     for method_name, results in all_results.items():
         print(f"\n=== Global Summary ({method_name}) ===")
@@ -2476,7 +2494,7 @@ def main():
 
         # ---------- Global depth GT visibility from image0 (JamMa 0→1 mk0 all) ----------
         depth_gt_visibility_global = None
-        if method_name == "jamma":
+        if method_name in ["jamma", "det-jamma"]:
             total_initial_points = 0
             total_counts_per_k = [0] * args.bag_size           # symmetric depth base thr≈1px
             total_counts_per_k_vis_only = [0] * args.bag_size  # proj-only 0→k
@@ -2634,12 +2652,14 @@ def main():
             'per_bag': all_results,
             'summary': summary,
         }
-        #args.save_json.write_text(json.dumps(out_json, indent=2))
-        #print(f"Full results saved to {args.save_json}")
+        args.save_json.parent.mkdir(parents=True, exist_ok=True)
+        args.save_json.write_text(json.dumps(out_json, indent=2, default=_json_default))
+        print(f"Full results saved to {args.save_json}")
 
     # 2) Global summary のみを別ファイルに保存
     if args.save_summary_json:
-        args.save_summary_json.write_text(json.dumps(summary, indent=2))
+        args.save_summary_json.parent.mkdir(parents=True, exist_ok=True)
+        args.save_summary_json.write_text(json.dumps(summary, indent=2, default=_json_default))
         print(f"Global summary saved to {args.save_summary_json}")
 
 
