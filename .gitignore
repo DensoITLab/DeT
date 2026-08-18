@@ -17,17 +17,22 @@ env/
 conda-meta/
 
 # Local data and artifacts
-data/
-datasets/
-dump/
-outputs/
-output*/
-demo/output*/
-jamma_log/
-logs/
-wandb/
-lightning_logs/
-sfm_txt_results/
+/data/
+/datasets/
+/dump/
+/outputs/
+/output*/
+/demo/output*/
+/jamma_log/
+/det_log/
+/logs/
+/wandb/
+/lightning_logs/
+/sfm_txt_results/
+/visualization/
+/checkpoints/
+/weights/
+/weight/
 
 # Checkpoints and generated arrays
 *.ckpt
