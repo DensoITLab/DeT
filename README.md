@@ -29,6 +29,7 @@ pip install mamba-ssm==2.0.3
 ## GB10 / aarch64 Container
 
 For NVIDIA GB10 / DGX Spark aarch64, use the Apptainer definition below. Build it on the GB10 machine so Apptainer pulls the arm64 variant of the multi-arch NVIDIA NGC PyTorch image. The definition does not overwrite the CUDA-enabled PyTorch stack with old x86/CUDA 11.8 wheels.
+PoseLib is built from source because the PyPI release does not provide a Linux aarch64 wheel for the NGC Python runtime.
 
 ```bash
 apptainer build det-gb10.sif containers/det_gb10_aarch64.def
