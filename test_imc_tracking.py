@@ -1,53 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Evaluate epipolar precision @1e-4 on bagged image subsets (e.g., 5bag_*.txt),
-using DeT/JamMa variants for feature matching,
-per-pair metric evaluation, and 0→N (start→end) / 0→k metrics via track linking.
-Also aggregates global AUC@{5,10,20}° for pairs and 0→N,
-and global FLOPs / runtime per pair, per method.
-
-さらに:
-- 0→N precision の分母を、各 bag ごとに 3 手法 (JamMa / DeT/JamMa / legacy-JamMa) の
-  0→N フルトラック数の最小値に揃えた
-  「分母揃え版 precision」を
-  conf_sum / conf_prod の 2 パターンで計算・集計する。
-- 各 bag / 各手法について、0→k (k=1..N-1) で画像0と画像kのエピ誤差を計算し、
-  規定閾値以内の数 / 総数 / precision を `metrics_0_to_k_all` に保存。
-  それを bag ごとにも print し、かつ最後に全 bag 集計して global 0→k も print する。
-
-本版ではさらに:
-- depth を用いて image0 上の点を 3D に戻し、任意フレーム k への再投影 GT を作り、
-  0→N / 0→k の 2D ユークリッド誤差 [px] を
-  1,3,5,10px の閾値でカウント/割合として評価する。
-- JamMa の 0→1 マッチングの image0 側の点を全て depth0 から 3D に戻し、
-  画像 0..N-1 まで追跡したときに、各フレーム k で何点がまだ画像内に残っているか
-  （GT トラック生存数）を per-bag / global に集計する。
-
-本版(拡張)ではさらに:
-- 片側 depth 評価 (0側depthから1側GT) は残しつつ、
-  1側 depth から0側GTを作る逆向き評価も行い、
-  その2つの誤差の平均 ( (e_0 + e_1) / 2 ) を symmetric depth 誤差として評価する。
-  0→N / 0→k の両方について、片側・両側の両方を print / JSON に追加する。
-
-本版(拡張2)ではさらに:
-- depth GT visibility from image0 について、
-  0→k→0 の mutual backcheck を 1,3,5,10px の複数閾値で評価し、
-  bag ごと / global に集計する。
-
-本版(拡張3)ではさらに:
-- GT 側の「両側」定義も、depth 評価と同じく
-  隣接フレーム k→k+1 の forward/backward depth 再投影誤差に基づく定義に変更。
-  旧来の 0→k→0 mutual backcheck ベースの両側定義は廃止。
-- 各メソッドの depth 評価について、
-  「各エッジごとの閾値以内カウント」に加えて、
-  一度でも閾値を外したトラックは次以降のフレームではカウントしない
-  survival 型のトラック数も計算する。
-
-本版(拡張4)ではさらに:
-- GT 生成側で、forward/backward depth の「正規化誤差」が 0.2 未満のときだけ
-  有効な depth とみなす rel_err < 0.2 チェックを追加している。
-"""
 
 import argparse
 import dataclasses
@@ -69,7 +21,6 @@ from src.config.default import get_cfg_defaults
 from src.lightning.lightning_jamma import PL_JamMa
 from src.utils.profiler import build_profiler
 
-# LO-RANSAC / pose utilities (JamMa実装のものを使用)
 from src.utils.metrics import (
     estimate_lo_pose,
     relative_pose_error,
@@ -127,7 +78,6 @@ def parse_args():
 
     parser.add_argument('--save_json', type=Path, default=Path('outputs/fig6_imc_tracking.json'),
                         help='Full results (per_bag + summary)')
-    # Global summary だけを吐く JSON
     parser.add_argument('--save_summary_json', type=Path,
                         default=Path('outputs/fig6_imc_tracking_summary.json'),
                         help='Only global summary dict per method')
@@ -230,10 +180,6 @@ def _read_depth_from_h5(h5_path: Path) -> np.ndarray:
 
 
 def load_depth_from_dir(depth_dir: Path, img_path: Path) -> np.ndarray:
-    """
-    画像に対応する depth を読むヘルパー。
-    ここでは <stem>.h5 に depth が入っている想定。
-    """
     h5_path = depth_dir / f"{img_path.stem}.h5"
     return _read_depth_from_h5(h5_path)
 
@@ -250,7 +196,6 @@ def _relative_pose(camA: CameraParams, camB: CameraParams):
 
 
 def _build_T_0to1(camA: CameraParams, camB: CameraParams) -> np.ndarray:
-    """JamMa の T_0to1 と同じ意味になるように cameraA→cameraB の相対姿勢行列を作成."""
     R21, t21 = _relative_pose(camA, camB)
     T = np.eye(4, dtype=np.float32)
     T[:3, :3] = R21
@@ -267,11 +212,6 @@ def _compute_pair_metrics_jamma_style(
     device: torch.device,
     epi_thr: float = 1e-4,
 ) -> dict:
-    """
-    JamMa の test_step._compute_metrics と同じパイプライン
-      compute_symmetrical_epipolar_errors + compute_pose_errors
-    を 1 ペアに対して実行して、必要な値だけ抜き出す。
-    """
     n_total = int(mk0.shape[0])
     if n_total == 0:
         return dict(
@@ -333,7 +273,6 @@ def _compute_symmetric_epi_errors_for_two_cams(
     cam1: CameraParams,
     device: torch.device,
 ) -> np.ndarray:
-    """0→N, 0→k 用の symmetric_epipolar_distance 計算。"""
     if x0_px.size == 0:
         return np.zeros((0,), dtype=float)
 
@@ -354,12 +293,9 @@ def _compute_symmetric_epi_errors_for_two_cams(
 
 
 # ============================================================
-# 3') depth-based error helper (隣接2フレーム片側/両側)
-#     ★ rel_err < 0.2 チェックを追加
 # ============================================================
 
 def _empty_reproj_stats(thr_list=None) -> Dict[str, Any]:
-    """空の depth 再投影 stats を作るヘルパー。"""
     if thr_list is None:
         thr_list = [1, 3, 5, 10]
     return {
@@ -380,12 +316,6 @@ def _compute_depth_errors_between_two_views(
     cam_tgt: CameraParams,
     use_rel_err_gate: bool = True,
 ) -> Tuple[float, bool, float, bool]:
-    """
-    ...
-    use_rel_err_gate:
-        True のときだけ forward/backward で rel_err < 0.2 のゲートを掛ける。
-        False のときは、奥行きが有限 & >0 であれば rel_err を見ずに有効とする。
-    """
     # ---------- forward: k -> k+1 ----------
     e_fwd = 0.0
     valid_fwd = False
@@ -429,13 +359,11 @@ def _compute_depth_errors_between_two_views(
                                             ))
                                             valid_fwd = True
                                 else:
-                                    # depth_tgt の値は見ず、画面内ならそのまま有効
                                     e_fwd = float(np.linalg.norm(
                                         p_tgt - np.array([u_t, v_t], dtype=np.float32)
                                     ))
                                     valid_fwd = True
                     else:
-                        # 片側 depth 評価（target depth が無い場合）は rel_err を掛けない
                         e_fwd = float(np.linalg.norm(
                             p_tgt - np.array([u_t, v_t], dtype=np.float32)
                         ))
@@ -484,13 +412,11 @@ def _compute_depth_errors_between_two_views(
                                         ))
                                         valid_bwd = True
                             else:
-                                # source depth は rel_err でゲートしない
                                 e_bwd = float(np.linalg.norm(
                                     p_src - np.array([u_s, v_s], dtype=np.float32)
                                 ))
                                 valid_bwd = True
                     else:
-                        # 片側 depth 評価（source depth が無い場合）は rel_err を掛けない
                         e_bwd = float(np.linalg.norm(
                             p_src - np.array([u_s, v_s], dtype=np.float32)
                         ))
@@ -501,7 +427,6 @@ def _compute_depth_errors_between_two_views(
 
 # ============================================================
 # 3'') depth-based GT visibility from image0
-#       （JamMa 0→1 mk0 全点ベース, 隣接k→k+1 両側定義）
 # ============================================================
 
 def _compute_depth_gt_visibility_from0(
@@ -511,35 +436,6 @@ def _compute_depth_gt_visibility_from0(
     depths: List[Optional[np.ndarray]],
     mutual_backcheck_thr_px: float = 1.0,
 ) -> Dict[str, Any]:
-    """
-    JamMa 0→1 の image0 側点 mk0_01 を起点に、
-    depth を使った「GT トラック visibility」を step-by-step で評価する。
-
-    - 片側 visibility (projection-only):
-        k フレームの GT ピクセルと depth_k を使って k→k+1 の GT を作成し、
-        Z>0 & 画面内 & depth 有効であれば survive とする。
-        → counts_per_k_vis_only[k] に「そのフレームまで生きているトラック数」を保存。
-
-    - 両側 (symmetric, multi-thr):
-        上記と同じ GT トラックを使いつつ、各ステップ k→k+1 で
-          * k の GT ピクセル & depth_k
-          * k+1 の GT ピクセル & depth_{k+1}
-        を使って _compute_depth_errors_between_two_views を呼び、
-        e_sym = (e_fwd + e_bwd) / 2 が閾値以下である限り survive とみなす。
-        （一度でも閾値を割ったら、そのトラックはそれ以降のフレームではカウントしない）
-        → multi_thr['counts_per_k'][t_idx][k] に survival カウントを保存。
-
-    戻り値:
-      {
-        'num_points_initial': 初期点数（depth0 が有効だった mk0_01 の数）
-        'counts_per_k':        base_thr (=mutual_backcheck_thr_px に近いthr) の survival カウント
-        'counts_per_k_vis_only': 片側 visibility のカウント
-        'multi_thr': {
-            'thr_px': [...],
-            'counts_per_k': [[...], ...],  # per-thr, per-k survival カウント
-        }
-      }
-    """
     num_cams = len(cams)
     if num_cams == 0 or mk0_01.shape[0] == 0:
         return {
@@ -557,7 +453,6 @@ def _compute_depth_gt_visibility_from0(
     depth0 = depth0.astype(np.float32)
     H0, W0 = depth0.shape
 
-    # --- 初期 GT ピクセル (frame0) を depth0 でフィルタしつつ保持 ---
     init_px = []
     for (x0, y0) in mk0_01:
         ix = int(round(float(x0)))
@@ -580,21 +475,18 @@ def _compute_depth_gt_visibility_from0(
             },
         }
 
-    cur_pix = np.asarray(init_px, dtype=np.float32)  # (P,2), frame0 の GT
+    cur_pix = np.asarray(init_px, dtype=np.float32)
     P = cur_pix.shape[0]
 
-    # --- 片側 visibility 用 survival ---
     counts_per_k_vis_only = [0] * num_cams
     alive_vis_only = np.ones(P, dtype=bool)
     counts_per_k_vis_only[0] = int(alive_vis_only.sum())
 
-    # --- 両側 (multi-thr) survival ---
     counts_per_k_thr = {t: [0] * num_cams for t in thr_list}
     alive_sym = {t: np.ones(P, dtype=bool) for t in thr_list}
     for t in thr_list:
-        counts_per_k_thr[t][0] = P  # k=0 は全トラック alive
+        counts_per_k_thr[t][0] = P
 
-    # depths[0] を depth0 で上書き（念のため）
     depths_fixed = list(depths)
     if len(depths_fixed) > 0:
         depths_fixed[0] = depth0
@@ -608,11 +500,9 @@ def _compute_depth_gt_visibility_from0(
         depth_k = depths_fixed[k] if k < len(depths_fixed) else None
         depth_n = depths_fixed[k + 1] if (k + 1) < len(depths_fixed) else None
 
-        # 片側 visibility: depth_k が無ければ全滅
         if depth_k is None:
             alive_vis_only[:] = False
             counts_per_k_vis_only[k + 1] = 0
-            # 対称側もここで全滅扱い
             for t in thr_list:
                 alive_sym[t][:] = False
                 counts_per_k_thr[t][k + 1] = 0
@@ -621,12 +511,10 @@ def _compute_depth_gt_visibility_from0(
         Hk, Wk = depth_k.shape
         Hn, Wn = (depth_n.shape if depth_n is not None else (None, None))
 
-        # 新しいフレームでの位置
         old_cur_pix = cur_pix.copy()
         new_pix = cur_pix.copy()
         new_alive = np.zeros_like(alive_vis_only)
 
-        # --- vis-only: forward 投影 (k -> k+1) ---
         for i in range(P):
             if not alive_vis_only[i]:
                 continue
@@ -660,7 +548,6 @@ def _compute_depth_gt_visibility_from0(
             p_n = cam_n.K @ (X_cam_n / X_cam_n[2])
             u, v = float(p_n[0]), float(p_n[1])
 
-            # 画像内チェック（depth_n があればサイズで）
             if Hn is not None and Wn is not None:
                 if u < 0 or u >= Wn or v < 0 or v >= Hn:
                     alive_vis_only[i] = False
@@ -674,16 +561,14 @@ def _compute_depth_gt_visibility_from0(
         alive_vis_only = new_alive
         counts_per_k_vis_only[k + 1] = int(alive_vis_only.sum())
 
-                # --- 両側 (backward 誤差ベース) survival: GT_k を基準に k+1→k のズレだけを見る ---
         for i in range(P):
-            # vis-only で死んでいるものは depth 評価でも死に扱い
             if not alive_vis_only[i]:
                 for t in thr_list:
                     alive_sym[t][i] = False
                 continue
 
-            p_k = old_cur_pix[i]   # GT_k（基準）
-            p_n = cur_pix[i]       # depth_k から生成した GT_{k+1}
+            p_k = old_cur_pix[i]
+            p_n = cur_pix[i]
 
             e_fwd, valid_fwd, e_bwd, valid_bwd = _compute_depth_errors_between_two_views(
                 p_src=p_k,
@@ -697,8 +582,6 @@ def _compute_depth_gt_visibility_from0(
             for t in thr_list:
                 if not alive_sym[t][i]:
                     continue
-                # GT 評価では、Z>0 / 範囲内 / rel_err<0.2 まで含んだ backward の有効判定と、
-                # backward 誤差 e_bwd の閾値チェックだけで survival を決める
                 if not valid_bwd:
                     alive_sym[t][i] = False
                 else:
@@ -709,7 +592,6 @@ def _compute_depth_gt_visibility_from0(
         for t in thr_list:
             counts_per_k_thr[t][k + 1] = int(alive_sym[t].sum())
 
-    # base_thr を mutual_backcheck_thr_px に近いものから選ぶ
     base_thr = min(thr_list, key=lambda x: abs(x - float(mutual_backcheck_thr_px)))
     counts_per_k_base = counts_per_k_thr[base_thr]
 
@@ -802,7 +684,6 @@ def evaluate_bag_with_tracks(
     topk: int = 20000,
     legacy_linking: bool = False,
     depth_dir: Path = None,
-    # ★ JamMa のときだけ 0→1 mk0 全点ベースの depth GT 可視性を計算するフラグ
     compute_depth_gt_from0: bool = False,
     min_corr_0N: int = 30,
     min_inliers_0N: int = 30,
@@ -846,7 +727,6 @@ def evaluate_bag_with_tracks(
     pixel_thr = 0.5
     conf = 0.999
 
-    # ★ JamMa 0→1 の元の mk0 (topk 前) を保存するための変数
     mk0_01_for_depth_gt = None
     image_idA = 0
     image_idB = 1
@@ -872,7 +752,6 @@ def evaluate_bag_with_tracks(
         image_idA += 1
         image_idB += 1
 
-        # ★ depth GT 用に JamMa 0→1 の mk0 をそのまま保存
         if i == 0 and compute_depth_gt_from0:
             mk0_01_for_depth_gt = mk0_t.cpu().numpy()
 
@@ -1020,11 +899,9 @@ def evaluate_bag_with_tracks(
 
             confs = tr.get('confs', [])
 
-            # ★ 最初(0→1)以外の信頼度だけを使う
             if len(confs) > 1:
                 used_confs = np.asarray(confs[1:], dtype=np.float64)
             else:
-                # バグりにくくするため、長さ1以下のときはそのまま全部使う or 好きな挙動にしてOK
                 used_confs = np.asarray(confs, dtype=np.float64)
 
             if used_confs.size > 0:
@@ -1034,14 +911,6 @@ def evaluate_bag_with_tracks(
                 tr['conf_sum_0_to_N'] = 0.0
                 tr['conf_prod_0_to_N'] = 0.0
 
-            """
-            if len(confs) > 0:
-                tr['conf_sum_0_to_N'] = float(np.sum(confs))
-                tr['conf_prod_0_to_N'] = float(np.prod(confs))
-            else:
-                tr['conf_sum_0_to_N'] = 0.0
-                tr['conf_prod_0_to_N'] = 0.0
-            """
 
     endpoints_0 = np.array(endpoints_0, dtype=float)
     endpoints_N = np.array(endpoints_N, dtype=float)
@@ -1055,7 +924,6 @@ def evaluate_bag_with_tracks(
             tracks[tid]['epi_err_0N'] = float(errs_0N[idx])
 
         n_total_0N = int(errs_0N.size)
-        # 1e-4 / 5e-4 両方の分子・分母
         n_correct_0N_1e4 = int((errs_0N < 1e-4).sum())
         n_correct_0N_5e4 = int((errs_0N < 5e-4).sum())
         prec_0N_1e4 = float(n_correct_0N_1e4 / n_total_0N) if n_total_0N else 0.0
@@ -1142,13 +1010,11 @@ def evaluate_bag_with_tracks(
 
 
 
-        # ---- 0→N 再投影誤差 (endpoints ベース) ----
-        reproj_errs_0N_end_one = []   # 片側 (0側 depth または N 側 depth のどちらか有効)
-        reproj_errs_0N_end_sym = []   # 両側 (0, N 両 depth 有効時の平均誤差)
+        reproj_errs_0N_end_one = []
+        reproj_errs_0N_end_sym = []
 
         if depth_dir is not None and depths[0] is not None and depths[-1] is not None:
             for p0, pN in zip(endpoints_0, endpoints_N):
-                # p0: image0 上のマッチ点, pN: imageN 上のマッチ点
                 e_fwd, valid_fwd, e_bwd, valid_bwd = _compute_depth_errors_between_two_views(
                     p_src=p0,
                     p_tgt=pN,
@@ -1156,7 +1022,7 @@ def evaluate_bag_with_tracks(
                     depth_tgt=depths[-1],
                     cam_src=cams[0],
                     cam_tgt=cams[-1],
-                    use_rel_err_gate=False,   # 評価側なので rel_err < 0.2 は掛けない
+                    use_rel_err_gate=False,
                 )
 
                 if valid_fwd:
@@ -1166,7 +1032,6 @@ def evaluate_bag_with_tracks(
 
         thr_list = [1, 3, 5, 10]
 
-        # 片側 (0→N) エンドポイント誤差の統計
         if len(reproj_errs_0N_end_one) > 0:
             errs = np.asarray(reproj_errs_0N_end_one, dtype=np.float32)
             n_valid_end_one = int(errs.size)
@@ -1179,7 +1044,6 @@ def evaluate_bag_with_tracks(
             ratios_end_one = [0.0] * len(thr_list)
             median_end_one = float('nan')
 
-        # 両側 (0↔N 平均) エンドポイント誤差の統計
         if len(reproj_errs_0N_end_sym) > 0:
             errs_sym = np.asarray(reproj_errs_0N_end_sym, dtype=np.float32)
             n_valid_end_sym = int(errs_sym.size)
@@ -1193,11 +1057,10 @@ def evaluate_bag_with_tracks(
             median_end_sym = float('nan')
 
 
-        # ---- depth-based 0→N / 0↔N（隣接 k→k+1 ベース + survival）----
         thr_list = [1, 3, 5, 10]
 
-        depth_edge_errs_0N_one = []   # 片側: エッジ単位誤差
-        depth_edge_errs_0N_sym = []   # 両側: エッジ単位 (mean of fwd/bwd)
+        depth_edge_errs_0N_one = []
+        depth_edge_errs_0N_sym = []
 
         num_steps = bag_size - 1
         track_surv_counts_one = {t: [0] * (num_steps + 1) for t in thr_list}
@@ -1208,11 +1071,9 @@ def evaluate_bag_with_tracks(
                 tr = tracks[tid]
                 pts = np.asarray(tr['points'], dtype=np.float32)  # (bag_size, 2)
 
-                # 片側・両側 survival フラグ
                 alive_one = {t: True for t in thr_list}
                 alive_sym = {t: True for t in thr_list}
 
-                # frame 0 では全フルトラックが alive
                 for t in thr_list:
                     track_surv_counts_one[t][0] += 1
                     track_surv_counts_sym[t][0] += 1
@@ -1239,13 +1100,11 @@ def evaluate_bag_with_tracks(
                         use_rel_err_gate=False
                     )
 
-                    # エッジ単位の誤差として蓄積
                     if valid_fwd:
                         depth_edge_errs_0N_one.append(e_fwd)
                     if valid_fwd and valid_bwd:
                         depth_edge_errs_0N_sym.append(0.5 * (e_fwd + e_bwd))
 
-                    # 片側 survival
                     for t in thr_list:
                         if alive_one[t]:
                             if (not valid_fwd) or (e_fwd > t):
@@ -1253,7 +1112,6 @@ def evaluate_bag_with_tracks(
                             else:
                                 track_surv_counts_one[t][f_next] += 1
 
-                    # 両側 survival
                     for t in thr_list:
                         if alive_sym[t]:
                             if not (valid_fwd and valid_bwd):
@@ -1265,7 +1123,6 @@ def evaluate_bag_with_tracks(
                                 else:
                                     track_surv_counts_sym[t][f_next] += 1
 
-        # --- 片側: エッジ単位集計 ---
         if len(depth_edge_errs_0N_one) > 0:
             errs = np.asarray(depth_edge_errs_0N_one, dtype=np.float32)
             n_valid = int(errs.size)
@@ -1285,13 +1142,11 @@ def evaluate_bag_with_tracks(
             'ratios': ratios,
             'n_valid': n_valid,
             'median_err_px': median_px,
-            # トラック survival 版: frame 0..N のカウント
             'track_counts_per_k': {
                 str(t): track_surv_counts_one[t] for t in thr_list
             },
         }
 
-        # --- 両側: エッジ単位集計 (mean of fwd/bwd) ---
         if len(depth_edge_errs_0N_sym) > 0:
             errs_sym = np.asarray(depth_edge_errs_0N_sym, dtype=np.float32)
             n_valid_sym = int(errs_sym.size)
@@ -1311,7 +1166,6 @@ def evaluate_bag_with_tracks(
             'ratios': ratios_sym,
             'n_valid': n_valid_sym,
             'median_err_px': median_px_sym,
-            # 両側 survival 版
             'track_counts_per_k': {
                 str(t): track_surv_counts_sym[t] for t in thr_list
             },
@@ -1321,10 +1175,8 @@ def evaluate_bag_with_tracks(
             'tracks_start_at_0': int(tracks_start_at_0),
             'n_tracks_0_to_N': n_tracks_full_0N,
             'track_survival_fraction_0_to_N': survival_frac,
-            # 既存: 1e-4
             'precision@1e-4_0_to_N': prec_0N_1e4,
             'n_correct_0_to_N': n_correct_0N_1e4,
-            # 新規: 5e-4
            'precision@5e-4_0_to_N': prec_0N_5e4,
             'n_correct_0_to_N_5e-4': n_correct_0N_5e4,
             'n_total_0_to_N': n_total_0N,
@@ -1332,10 +1184,8 @@ def evaluate_bag_with_tracks(
             'R_err_deg_0N': R_err_0N,
             't_err_deg_0N': t_err_0N,
             'epi_errs_0N': errs_0N.tolist(),
-            # depth-based (片側, edge-level)
             'reproj_errs_0N_px': reproj_errs_0N,
             'reproj_stats_0N_px': reproj_stats_0N,
-            # depth-based (両側, edge-level)
             'reproj_errs_0N_px_sym': reproj_errs_0N_sym,
             'reproj_stats_0N_px_sym': reproj_stats_0N_sym,
             'reproj_errs_0N_px_endpoints': [float(e) for e in reproj_errs_0N_end_one],
@@ -1397,14 +1247,12 @@ def evaluate_bag_with_tracks(
                 endpoints_0k_0, endpoints_0k_k, cams[0], cams[k], device=device
             )
             n_total_0k = int(errs_0k.size)
-            # 1e-4 / 5e-4 両方
             n_correct_0k_1e4 = int((errs_0k < 1e-4).sum())
             n_correct_0k_5e4 = int((errs_0k < 5e-4).sum())
             prec_0k_1e4 = float(n_correct_0k_1e4 / n_total_0k) if n_total_0k else 0.0
             prec_0k_5e4 = float(n_correct_0k_5e4 / n_total_0k) if n_total_0k else 0.0
             median_err_0k = float(np.median(errs_0k))
 
-            # ---- depth-based 0→k / 0↔k (隣接 k→k+1 ベース + survival) ----
             thr_list = [1, 3, 5, 10]
             depth_edge_errs_0k_one = []
             depth_edge_errs_0k_sym = []
@@ -1417,7 +1265,6 @@ def evaluate_bag_with_tracks(
                     start_id = tr['start_id']
                     pts = np.asarray(tr['points'], dtype=np.float32)
 
-                    # 念のため start_id チェック
                     if start_id > 0:
                         continue
                     if len(pts) <= k:
@@ -1445,20 +1292,17 @@ def evaluate_bag_with_tracks(
                             use_rel_err_gate=False
                         )
 
-                        # 最終エッジ (k-1→k) のみ edge 誤差配列に追加
                         if f == k - 1:
                             if valid_fwd:
                                 depth_edge_errs_0k_one.append(e_fwd)
                             if valid_fwd and valid_bwd:
                                 depth_edge_errs_0k_sym.append(0.5 * (e_fwd + e_bwd))
 
-                        # survival 更新（片側）
                         for t in thr_list:
                             if alive_one[t]:
                                 if (not valid_fwd) or (e_fwd > t):
                                     alive_one[t] = False
 
-                        # survival 更新（両側）
                         for t in thr_list:
                             if alive_sym[t]:
                                 if not (valid_fwd and valid_bwd):
@@ -1468,14 +1312,12 @@ def evaluate_bag_with_tracks(
                                     if e_sym > t:
                                         alive_sym[t] = False
 
-                    # 0→k まで一度も閾値超過しなかったトラックのみカウント
                     for t in thr_list:
                         if alive_one[t]:
                             track_surv_counts_one[t] += 1
                         if alive_sym[t]:
                             track_surv_counts_sym[t] += 1
 
-            # 片側: edge (k-1→k) の分布
             if len(depth_edge_errs_0k_one) > 0:
                 errs_one = np.asarray(depth_edge_errs_0k_one, dtype=np.float32)
                 n_valid_one = int(errs_one.size)
@@ -1494,13 +1336,11 @@ def evaluate_bag_with_tracks(
                 'ratios': ratios_one,
                 'n_valid': n_valid_one,
                 'median_err_px': median_one,
-                # survival 方式の「0→k まで一度も閾値を破っていないトラック数」
                 'track_counts_survival': {
                     str(t): track_surv_counts_one[t] for t in thr_list
                 },
             }
 
-            # 両側: edge (k-1→k) の対称誤差
             if len(depth_edge_errs_0k_sym) > 0:
                 errs_sym = np.asarray(depth_edge_errs_0k_sym, dtype=np.float32)
                 n_valid_sym = int(errs_sym.size)
@@ -1527,20 +1367,16 @@ def evaluate_bag_with_tracks(
             metrics_0k_list.append({
                 'k': k,
                 'n_tracks_0_to_k': int(endpoints_0k_0.shape[0]),
-                # 既存: 1e-4
                 'precision@1e-4_0_to_k': prec_0k_1e4,
                 'n_correct_0_to_k': n_correct_0k_1e4,
-                # 新規: 5e-4
                 'precision@5e-4_0_to_k': prec_0k_5e4,
                 'n_correct_0_to_k_5e-4': n_correct_0k_5e4,
                 'n_total_0_to_k': n_total_0k,
 
                 'median_err_0_to_k': median_err_0k,
                 'epi_errs_0k': errs_0k.tolist(),
-                # depth-based (片側, edge k-1→k)
                 'reproj_errs_0k_px': [float(e) for e in depth_edge_errs_0k_one],
                 'reproj_stats_0k_px': depth_stats_0k,
-                # depth-based (両側, edge k-1→k)
                 'reproj_errs_0k_px_sym': [float(e) for e in depth_edge_errs_0k_sym],
                 'reproj_stats_0k_px_sym': depth_stats_0k_sym,
             })
@@ -1559,14 +1395,13 @@ def evaluate_bag_with_tracks(
                 'reproj_stats_0k_px_sym': _empty_reproj_stats(),
             })
 
-    # ---- JamMa 0→1 mk0 全点ベースの depth GT visibility from 0 ----
     if compute_depth_gt_from0 and mk0_01_for_depth_gt is not None and depths[0] is not None:
         depth_gt_vis = _compute_depth_gt_visibility_from0(
             mk0_01=mk0_01_for_depth_gt,
             depth0=depths[0],
             cams=cams,
             depths=depths,
-            mutual_backcheck_thr_px=1.0,  # 基準閾値: 1px
+            mutual_backcheck_thr_px=1.0,
         )
     else:
         depth_gt_vis = None
@@ -1580,13 +1415,11 @@ def evaluate_bag_with_tracks(
         'flops_total': flops_total,
         'runtime_ms_total': runtime_ms_total,
         'num_pairs': num_pairs,
-        # ★ 追加: JamMa 0→1 mk0 全点から見た depth GT visibility
         'depth_gt_visibility_from0': depth_gt_vis,
     }
 
 
 # ============================================================
-# 6) Global aggregation（epi ベース）
 # ============================================================
 
 def aggregate_pair_metrics(all_results, epi_err_thr=1e-4):
@@ -1663,7 +1496,6 @@ def aggregate_0N_metrics(all_results, epi_err_thr=1e-4):
 
     total_correct_0N = sum(r['metrics_0_to_N']['n_correct_0_to_N'] for r in all_results)
     total_matches_0N = sum(r['metrics_0_to_N']['n_total_0_to_N'] for r in all_results)
-    # 5e-4 用の分子（分母は同じ）
     total_correct_0N_5e4 = sum(
         r['metrics_0_to_N'].get('n_correct_0_to_N_5e-4',
                                  r['metrics_0_to_N']['n_correct_0_to_N'])
@@ -1706,21 +1538,14 @@ def build_confidence_ranking_curves(
     results: List[dict],
     epi_err_thr: float = 1e-4,
 ) -> Dict[str, Any]:
-    """
-    0→N フルトラックを集めて、
-    - conf_sum_0_to_N
-    - conf_prod_0_to_N
-    でソートしたときの「上から i 本までの累積正解数 / precision」を返す。
-    """
     scores_sum = []
     scores_prod = []
-    flags = []  # epi_err_0N < epi_err_thr なら 1, それ以外 0
+    flags = []
 
     for r in results:
         num_pairs = r['num_pairs']
         tracks_dict = r['tracks']
         for tr in tracks_dict.values():
-            # 0→N フルトラックのみ対象
             if (tr.get('start_id', -1) == 0 and
                 tr.get('end_id', -1) == num_pairs and
                 len(tr.get('points', [])) == (num_pairs + 1) and
@@ -1743,7 +1568,6 @@ def build_confidence_ranking_curves(
             }
         scores = np.asarray(scores, dtype=np.float64)
         flags = np.asarray(flags, dtype=np.int64)
-        # 信頼度降順
         order = np.argsort(-scores)
         sorted_flags = flags[order]
 
@@ -1769,7 +1593,6 @@ def build_confidence_ranking_curves(
 
 
 # ============================================================
-# 7) Main（Global depth サマリ・depth GT visibility もここに追加）
 # ============================================================
 
 def main():
@@ -1806,7 +1629,6 @@ def main():
         raise FileNotFoundError(
             f"No files found in {args.subset_dir} matching pattern {args.bag_size}bag_*.txt"
         )
-        # --- すべてのメソッド定義（ここから --methods でフィルタする） ---
     all_methods: Dict[str, Callable[..., Any]] = {
         "jamma": run_jamma_pair,
         "det-jamma": run_jamma_pair,
@@ -1819,7 +1641,6 @@ def main():
         "jamma_legacy": {"jamma": jamma_legacy_model},
     }
 
-    # --methods で指定されたものだけ有効化
     methods: Dict[str, Callable[..., Any]] = {
         name: fn for name, fn in all_methods.items() if name in args.methods
     }
@@ -1846,7 +1667,6 @@ def main():
         for method_name, run_pair_fn in methods.items():
             print(f"\n  === Method: {method_name} ===")
 
-            # legacy 判定: jamma_legacy / eloftr_legacy は legacy 構成
             is_legacy = (method_name in ["jamma_legacy"])
 
             #compute_depth_gt_from0 = (method_name in ["jamma", "eloftr"])
@@ -1910,7 +1730,6 @@ def main():
                 f"R_err={m0N['R_err_deg_0N']:.2f}° | T_err={m0N['t_err_deg_0N']:.2f}° | "
                 f"pose0N={m0N['pose_0N']}"
             )
-            # depth-based 0→N (片側 + 両側)
             stats_0N_px = m0N['reproj_stats_0N_px']
             print(
                 f"    depth-0→N one-side (k→k+1 edges): n_valid={stats_0N_px['n_valid']} | "
@@ -1985,7 +1804,6 @@ def main():
             flops_time[method_name]["total_runtime_ms_all"] += res['runtime_ms_total']
             flops_time[method_name]["total_pairs_all"] += res['num_pairs']
 
-    # ---- 各 bag ごとに「3 手法の 0→N フルトラック数の最小値」をターゲット分母として計算 ----
     num_bags = len(bag_files)
     equalized_target_n_per_bag: List[int] = []
     for bag_idx in range(num_bags):
@@ -1998,7 +1816,6 @@ def main():
         else:
             equalized_target_n_per_bag.append(0)
 
-    # ---- 手法ごとに Global aggregation ----
     summary: Dict[str, dict] = {}
     epi_thr_0N = 1e-4
     summary['dataset_name'] = args.dataset_name
@@ -2009,9 +1826,7 @@ def main():
 
         pair_summary = aggregate_pair_metrics(results, epi_err_thr=1e-4)
         total_matches = sum(p['n_total'] for r in results for p in r['pairs'])
-        # 1e-4 は既存の n_correct
         total_correct_1e4 = sum(p['n_correct'] for r in results for p in r['pairs'])
-        # 5e-4 分子は epi_errs から再計算
         total_correct_5e4 = 0
         for r in results:
             for p in r['pairs']:
@@ -2049,7 +1864,6 @@ def main():
 
         summary_0N = aggregate_0N_metrics(results, epi_err_thr=1e-4)
 
-        # ---------- Global 0→k (epi) 集計 ----------
         global_0k_summary = {}
         if results:
             k_values = sorted({ mk['k'] for r in results for mk in r['metrics_0_to_k_all'] })
@@ -2065,7 +1879,6 @@ def main():
                     if mk_for_k is None:
                         continue
                     total_correct_k_1e4 += mk_for_k['n_correct_0_to_k']
-                    # 5e-4 は epi_errs_0k から再計算 (保険として)
                     if mk_for_k['epi_errs_0k']:
                         errs_arr = np.array(mk_for_k['epi_errs_0k'], dtype=float)
                         total_correct_k_5e4 += int((errs_arr < 5e-4).sum())
@@ -2112,7 +1925,6 @@ def main():
                     f"median_err={gk['median_err_0_to_k']:.2e}"
                 )
 
-        # ---------- Global depth 0→N 集計 (片側) ----------
         thr_px = [1, 3, 5, 10]
         depth_counts_0N = [0] * len(thr_px)
         depth_n_valid_0N = 0
@@ -2148,21 +1960,9 @@ def main():
             'median_err_px': depth_median_0N,
         }
 
-        #print("\nGlobal depth-based 0→N reprojection metrics (one-side edges):")
         c0, c1, c2, c3 = depth_0N_summary['counts']
         r0, r1, r2, r3 = depth_0N_summary['ratios']
-        """
-        print(
-            f"  n_valid={depth_0N_summary['n_valid']} | "
-            f"median_px={depth_0N_summary['median_err_px']:.2f} | "
-            f"<=1px={r0:.3f} ({c0}), "
-            f"<=3px={r1:.3f} ({c1}), "
-            f"<=5px={r2:.3f} ({c2}), "
-            f"<=10px={r3:.3f} ({c3})"
-        )
-        """
 
-        # ---------- Global depth 0↔N 対称 集計 ----------
         depth_counts_0N_sym = [0] * len(thr_px)
         depth_n_valid_0N_sym = 0
         all_reproj_errs_0N_sym = []
@@ -2197,38 +1997,23 @@ def main():
             'median_err_px': depth_median_0N_sym,
         }
 
-        #print("\nGlobal depth-based 0↔N symmetric reprojection metrics (edge mean):")
         c0s, c1s, c2s, c3s = depth_0N_summary_sym['counts']
         r0s, r1s, r2s, r3s = depth_0N_summary_sym['ratios']
-        """
-        print(
-            f"  n_valid={depth_0N_summary_sym['n_valid']} | "
-            f"median_px={depth_0N_summary_sym['median_err_px']:.2f} | "
-            f"<=1px={r0s:.3f} ({c0s}), "
-            f"<=3px={r1s:.3f} ({c1s}), "
-            f"<=5px={r2s:.3f} ({c2s}), "
-            f"<=10px={r3s:.3f} ({c3s})"
-        )
-        """
 
 
-        # ---------- Global depth 0→N 集計（endpoint, track-based, 片側 + 両側） ----------
         thr_px = [1, 3, 5, 10]
 
-        # 片側 (0→N endpoint, tracks ベース)
-        depth_counts_0N_tracks_one = [0] * len(thr_px)  # 分子
-        depth_tracks_total_0N = 0                       # 分母（フルトラック数）
+        depth_counts_0N_tracks_one = [0] * len(thr_px)
+        depth_tracks_total_0N = 0
 
-        # 両側 (0↔N endpoint, tracks ベース)
-        depth_counts_0N_tracks_sym = [0] * len(thr_px)  # 分子（両側 OK のもの）
+        depth_counts_0N_tracks_sym = [0] * len(thr_px)
 
-        all_reproj_errs_0N_end_one = []   # 参考用：有効 depth のみの誤差分布
+        all_reproj_errs_0N_end_one = []
         all_reproj_errs_0N_end_sym = []
 
         for r in results:
             m = r['metrics_0_to_N']
 
-            # フルトラック数（epipolar 0→N と同じ定義）
             n_tracks_full = m.get('n_tracks_0_to_N', 0)
             if n_tracks_full == 0:
                 continue
@@ -2236,7 +2021,6 @@ def main():
             stats_end = m.get('reproj_stats_0N_px_endpoints', None)
             stats_end_sym = m.get('reproj_stats_0N_px_endpoints_sym', None)
 
-            # stats が無ければ depth 評価無しとして全部失敗扱い
             if stats_end is None or stats_end_sym is None:
                 depth_tracks_total_0N += n_tracks_full
                 continue
@@ -2250,7 +2034,6 @@ def main():
                 depth_counts_0N_tracks_one[i_t] += int(cs_one[i_t])
                 depth_counts_0N_tracks_sym[i_t] += int(cs_sym[i_t])
 
-            # 参考用：有効 depth のみの誤差分布（median 出す用）
             if m.get('reproj_errs_0N_px_endpoints', None):
                 all_reproj_errs_0N_end_one.append(
                     np.array(m['reproj_errs_0N_px_endpoints'], dtype=float)
@@ -2271,7 +2054,6 @@ def main():
             depth_ratios_0N_tracks_one = [0.0] * len(thr_px)
             depth_ratios_0N_tracks_sym = [0.0] * len(thr_px)
 
-        # median は「有効 depth のみ」の誤差から計算（分母は別物なので注意）
         if all_reproj_errs_0N_end_one:
             depth_median_0N_end_one = float(
                 np.median(np.concatenate(all_reproj_errs_0N_end_one))
@@ -2288,9 +2070,9 @@ def main():
 
         depth_0N_tracks_summary_one = {
             'thr_px': thr_px,
-            'counts': depth_counts_0N_tracks_one,          # 分子
+            'counts': depth_counts_0N_tracks_one,
             'ratios': depth_ratios_0N_tracks_one,         # counts / depth_tracks_total_0N
-            'n_tracks_total_0N': int(depth_tracks_total_0N),  # 分母（フルトラック数）
+            'n_tracks_total_0N': int(depth_tracks_total_0N),
             'median_err_px_valid_only': depth_median_0N_end_one,
         }
 
@@ -2303,7 +2085,6 @@ def main():
         }
 
 
-        # ---------- Global depth 0→k 集計 (片側) ----------
         depth_0k_summary = {}
         if results:
             k_values = sorted({ mk['k'] for r in results for mk in r['metrics_0_to_k_all'] })
@@ -2311,7 +2092,6 @@ def main():
                 counts_k = [0] * len(thr_px)
                 n_valid_k = 0
                 all_errs_k_px = []
-                # ★ 追加: 0→k survival トラック数の global 集計用
                 global_track_surv_k = {str(t): 0 for t in thr_px}
 
                 for r in results:
@@ -2330,7 +2110,6 @@ def main():
                     if mk_for_k.get('reproj_errs_0k_px', None):
                         all_errs_k_px.append(np.array(mk_for_k['reproj_errs_0k_px'], dtype=float))
 
-                    # ★ 追加: track_counts_survival を global に足し合わせ
                     tcs = stats_k.get('track_counts_survival', None)
                     if tcs is not None:
                         for t_key, c in tcs.items():
@@ -2353,7 +2132,6 @@ def main():
                     'ratios': ratios_k,
                     'n_valid': n_valid_k,
                     'median_err_px': median_k_px,
-                    # ★ 追加: 0→k survival トラック数の global 足し合わせ
                     'track_counts_survival_global': global_track_surv_k,
                 }
 
@@ -2363,18 +2141,7 @@ def main():
                 dk = depth_0k_summary[k_str]
                 c0k, c1k, c2k, c3k = dk['counts']
                 r0k, r1k, r2k, r3k = dk['ratios']
-                """
-                print(
-                    f"  0→{k_str}: n_valid={dk['n_valid']} | "
-                    f"median_px={dk['median_err_px']:.2f} | "
-                    f"<=1px={r0k:.3f} ({c0k}), "
-                    f"<=3px={r1k:.3f} ({c1k}), "
-                    f"<=5px={r2k:.3f} ({c2k}), "
-                    f"<=10px={r3k:.3f} ({c3k})"
-                )
-                """
 
-        # ---------- Global depth 0↔k 対称 集計 ----------
         depth_0k_summary_sym = {}
         if results:
             k_values = sorted({ mk['k'] for r in results for mk in r['metrics_0_to_k_all'] })
@@ -2382,7 +2149,6 @@ def main():
                 counts_k_sym = [0] * len(thr_px)
                 n_valid_k_sym = 0
                 all_errs_k_px_sym = []
-                # ★ 追加: symmetric 版の 0↔k survival トラック数の global 集計用
                 global_track_surv_k_sym = {str(t): 0 for t in thr_px}
 
                 for r in results:
@@ -2403,7 +2169,6 @@ def main():
                             np.array(mk_for_k['reproj_errs_0k_px_sym'], dtype=float)
                         )
 
-                    # ★ 追加: symmetric depth の track_counts_survival も集計
                     tcs_sym = stats_k_sym.get('track_counts_survival', None)
                     if tcs_sym is not None:
                         for t_key, c in tcs_sym.items():
@@ -2428,7 +2193,6 @@ def main():
                     'ratios': ratios_k_sym,
                     'n_valid': n_valid_k_sym,
                     'median_err_px': median_k_px_sym,
-                    # ★ 追加: 0↔k symmetric survival トラック数の global 足し合わせ
                     'track_counts_survival_global': global_track_surv_k_sym,
                 }
 
@@ -2438,17 +2202,6 @@ def main():
                 dk = depth_0k_summary_sym[k_str]
                 c0k, c1k, c2k, c3k = dk['counts']
                 r0k, r1k, r2k, r3k = dk['ratios']
-                """
-                print(
-                    f"  0↔{k_str}: n_valid={dk['n_valid']} | "
-                    f"median_px={dk['median_err_px']:.2f} | "
-                    f"<=1px={r0k:.3f} ({c0k}), "
-                    f"<=3px={r1k:.3f} ({c1k}), "
-                    f"<=5px={r2k:.3f} ({c2k}), "
-                    f"<=10px={r3k:.3f} ({c3k})"
-                )
-                """
-                # ---------- Global depth 0→N (endpoint, one-side) 集計 ----------
 
         thr_px = [1, 3, 5, 10]
         depth_counts_0N_end = [0] * len(thr_px)
@@ -2575,7 +2328,6 @@ def main():
             total_counts_per_k = [0] * args.bag_size           # symmetric depth base thr≈1px
             total_counts_per_k_vis_only = [0] * args.bag_size  # proj-only 0→k
 
-            # multi-thr 集計用
             global_thr_px = None
             global_counts_per_k_multi = None  # shape (T, bag_size)
 
@@ -2624,33 +2376,23 @@ def main():
                     ],
                 }
 
-            #print("\nGlobal depth-GT visibility from image0 (JamMa 0→1 mk0 all):")
-            #print(f"  total_initial_points={depth_gt_visibility_global['total_initial_points']}")
             if total_initial_points > 0:
-                #print("  [symmetric depth (k↔k+1), base thr≈1px] total_counts_per_k:")
                 for k_idx, c in enumerate(depth_gt_visibility_global['total_counts_per_k']):
                     ratio = c / total_initial_points if total_initial_points > 0 else 0.0
-                    #print(f"    k={k_idx}: count={c}, ratio={ratio:.3f}")
 
-                #print("  [proj-only 0→k] total_counts_per_k_vis_only:")
                 for k_idx, c in enumerate(depth_gt_visibility_global['total_counts_per_k_vis_only']):
                     ratio = c / total_initial_points if total_initial_points > 0 else 0.0
-                    #print(f"    k={k_idx}: count={c}, ratio={ratio:.3f}")
 
                 multi_g = depth_gt_visibility_global.get('multi_thr', None)
                 if multi_g is not None:
                     thr_px_list = multi_g['thr_px']
                     counts_multi = multi_g['total_counts_per_k']
-                    #print("  [multi-thr symmetric depth (k↔k+1) survival]:")
                     for t_idx, thr in enumerate(thr_px_list):
-                        #print(f"    thr={thr:.1f}px:")
                         for k_idx, c in enumerate(counts_multi[t_idx]):
                             ratio = c / total_initial_points if total_initial_points > 0 else 0.0
-                            #print(f"      k={k_idx}: count={c}, ratio={ratio:.3f}")
             else:
                 print("  (no valid initial points for depth GT visibility)")
 
-        # 1e-4 / 5e-4 両方で confidence ranking を算出
         conf_rank_stats_1e4 = build_confidence_ranking_curves(
             results=results,
             epi_err_thr=1e-4,
@@ -2660,7 +2402,6 @@ def main():
             epi_err_thr=5e-4,
         )
 
-        # ---------- summary dict に depth / depth GT visibility も含める ----------
         summary[method_name] = {
             'pairs_summary': pair_summary,
             '0N_summary': summary_0N,
@@ -2675,10 +2416,8 @@ def main():
                 '1e-4': conf_rank_stats_1e4,
                 '5e-4': conf_rank_stats_5e4,
             },
-             # ★ ここで endpoint の depth summary も一緒に入れる
             'depth_0N_endpoints_summary': depth_0N_endpoints_summary,
 
-            # ★ 新規: endpoint / track-based depth 指標（分母 ≒ エピフルトラック数）
             'depth_0N_tracks_summary_one_side': depth_0N_tracks_summary_one,
             'depth_0N_tracks_summary_sym': depth_0N_tracks_summary_sym,
         }
@@ -2721,8 +2460,6 @@ def main():
                   f"{avg_time_ms:.2f} ms")
             print(f"Averaged FLOPs per pair ({method_name}): {avg_flops_GMac:.2f} GMac")
 
-    # ---- JSON 保存 ----
-    # 1) フル結果 (per_bag + summary)
     if args.save_json:
         out_json = {
             'per_bag': all_results,
@@ -2732,7 +2469,6 @@ def main():
         args.save_json.write_text(json.dumps(out_json, indent=2, default=_json_default))
         print(f"Full results saved to {args.save_json}")
 
-    # 2) Global summary のみを別ファイルに保存
     if args.save_summary_json:
         args.save_summary_json.parent.mkdir(parents=True, exist_ok=True)
         args.save_summary_json.write_text(json.dumps(summary, indent=2, default=_json_default))

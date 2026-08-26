@@ -52,10 +52,6 @@ def _project_7x7_to_5x5(inputs: torch.Tensor, offsets: torch.Tensor) -> torch.Te
     device = x.device
 
     # base 5x5 grid in normalized coordinates (-1..1).
-    #xs = torch.arange(1, 6, device=device)
-    #ys = torch.arange(1, 6, device=device)
-    #yy, xx = torch.meshgrid(ys, xs, indexing="ij")
-    #base = torch.stack((xx / 3 - 1, yy / 3 - 1), dim=-1)  # [5, 5, 2]
 
     # convert pixel offsets to normalized coordinate offsets and add to base grid
 
@@ -63,7 +59,6 @@ def _project_7x7_to_5x5(inputs: torch.Tensor, offsets: torch.Tensor) -> torch.Te
     grid = base.unsqueeze(0) + (offsets.view(B, 1, 1, 2) / 3)
 
 
-    #grid = base.unsqueeze(0) + (offsets.view(B, 1, 1, 2) / 3)
     grid = grid.to(x.dtype)
 
     # sample features using bilinear sampling
@@ -323,7 +318,6 @@ class JamMa(nn.Module):
             search_radius=self.search_radius,
             W=W,
         )
-        #self.detref = torch.compile(self.detref)
 
     # ------------------------ Coarse Matching ------------------------ #
     @torch.compile
@@ -410,7 +404,6 @@ class JamMa(nn.Module):
         ).view(2 * data["bs"], data["c"], data["h_8"], -1)
         feat_4 = torch.cat([data["feat_4_0"], data["feat_4_1"]], dim=0)
 
-        # if there are no coarse matches, return empty fine-level features
         if data["b_ids"].shape[0] == 0:
             device = feat_4.device
             empty = torch.empty(0, W**2, self.d_model_f, device=device)
@@ -513,7 +506,6 @@ class JamMa(nn.Module):
                 prev_data = data["prev_data"]
 
                 # only if previous image_1 equals current image_0
-                #if torch.equal(prev_data["imagec_1"], data["imagec_0"]):
                 if prev_data["image_idB"] == data["image_idA"]:
                     # sort previous matches by confidence
                     prev_sort_idx = torch.topk(
@@ -529,17 +521,6 @@ class JamMa(nn.Module):
                         - 2
                     )
 
-                    """
-                    # convert previous fine centers (in 1/2-res space) to flattened indices
-                    x_min, y_min = 3, 3
-                    x_max, y_max = 413, 413
-                    now_mkpts0_f_2_indices, now_mkpts0_f_2_center, mask0 = (
-                        _flat_idx_from_xy(
-                            prev_f1_2_center, x_min, y_min, x_max, y_max
-                        )
-                    )
-                    prev_kpts1 = prev_kpts1[mask0]
-                    """
 
                     # sort current matches by confidence
                     sort_idx = torch.topk(
@@ -575,125 +556,7 @@ class JamMa(nn.Module):
                         3,3,413,413,  # bounds for previous coarse centers
                     )
 
-                    """
 
-                    # nearest-neighbor matching between previous kpts1 and current mkpts0
-                    now_id_list, valid_index, matched_confs = _search_nearest_pt_torch(
-                        prev_kpts1,
-                        now_mkpts0_f,
-                        now_confs_sorted,
-                        max_dist=self.search_radius,
-                    )
-                    now_id_list = torch.as_tensor(
-                        now_id_list, dtype=torch.long, device=now_mkpts0_f.device
-                    )
-
-                    # compute displacement on 1/2-res coordinates
-                    now_mkpts0_f_2 = now_mkpts0_f[now_id_list] / 2
-                    now_mkpts1_f_2 = now_mkpts1_f[now_id_list] / 2
-                    now_diff = now_mkpts1_f_2 - now_mkpts0_f_2
-                    now_diff_int = torch.round(now_diff).to(torch.int)
-
-                    now_mkpts0_f_2_indices = now_mkpts0_f_2_indices[valid_index]
-                    now_mkpts0_f_2_center = now_mkpts0_f_2_center[valid_index]
-
-                    # propagate coarse centers from image0 to image1 using integer offsets
-                    now_mkpts1_f_2_center = (
-                        now_mkpts0_f_2_center + now_diff_int
-                    )
-
-                    # compute valid bounds from current mkpts1_f
-                    x_min, y_min = torch.min(
-                        data["mkpts1_f"] // 2, dim=0
-                    ).values
-                    x_max, y_max = torch.max(
-                        data["mkpts1_f"] // 2, dim=0
-                    ).values
-
-                    now_mkpts1_f_2_indices, now_mkpts1_f_2_center, mask1 = (
-                        _flat_idx_from_xy(
-                            now_mkpts1_f_2_center,
-                            int(x_min.item()),
-                            int(y_min.item()),
-                            int(x_max.item()),
-                            int(y_max.item()),
-                        )
-                    )
-                    # keep only indices that are valid on image1 side
-                    now_mkpts0_f_2_indices = now_mkpts0_f_2_indices[mask1]
-
-                    matched_confs = matched_confs[mask1]  
-
-                    # save displacement (in original resolution) and original points
-                    data.update({"diff": now_diff[mask1] * 2})
-                    data.update(
-                        {
-                            "diff_points": {
-                                "0": now_mkpts0_f[now_id_list][mask1],
-                                "1": now_mkpts1_f[now_id_list][mask1],
-                            },
-                            "diff_points_conf": matched_confs,
-                        }
-                    )
-
-                    # safety checks for flattened indices
-                    _check_idx(
-                        "now_mkpts0_f_2_indices", now_mkpts0_f_2_indices, 173056
-                    )
-                    _check_idx(
-                        "now_mkpts1_f_2_indices", now_mkpts1_f_2_indices, 173056
-                    )
-
-                    # batch ids (from previous frame)
-                    mb = prev_data["m_bids"].long()
-                    mb = mb[valid_index][mask1]
-
-                    assert (
-                        now_mkpts0_f_2_indices.shape
-                        == now_mkpts1_f_2_indices.shape
-                    ), "Index shape mismatch"
-                    assert (
-                        now_mkpts0_f_2_indices.shape[0] == mb.shape[0]
-                    ), "Index and batch id shape mismatch"
-
-                    # gather 7x7 (or W x W) windows around coarse centers
-                    feat_f0_unfold_flex = data["feat_f0_unfold_st1"][
-                        mb, now_mkpts0_f_2_indices.long()
-                    ]
-                    feat_f1_unfold_flex = data["feat_f1_unfold_st1"][
-                        mb, now_mkpts1_f_2_indices.long()
-                    ]
-                    data.update(
-                        {
-                            "new_b_ids": mb,
-                            "new_i_ids": now_mkpts0_f_2_indices.long(),
-                            "new_j_ids": now_mkpts1_f_2_indices.long(),
-                        }
-                    )
-
-                    # re-center 7x7 patches to 5x5 using previous sub-pixel offsets
-                    prev_subref1_sel = prev_subref1[valid_index][mask1]
-                    feat_f0_unfold_flex = _project_7x7_to_5x5(
-                        feat_f0_unfold_flex, prev_subref1_sel
-                    )
-
-                    data.update({"prev_subref1": prev_subref1_sel})
-
-                    # run MLP-Mixer on new fine-level patches
-                    feat_f_flex = torch.cat(
-                        [feat_f0_unfold_flex, feat_f1_unfold_flex], dim=1
-                    ).transpose(1, 2)
-                    for layer in self.fine_enc:
-                        feat_f_flex = layer(feat_f_flex)
-
-                    W = self.config["fine_window_size"]
-                    feat_f0_unfold_flex, feat_f1_unfold_flex = (
-                        feat_f_flex[:, :, : W**2],
-                        feat_f_flex[:, :, W**2 :],
-                    )
-                    """
-
-                    # 🔽 ここで Mixer を JamMa 側でかける
                     feat_f_flex = torch.cat(
                         [feat_f0_unfold_flex, feat_f1_unfold_flex], dim=1
                     ).transpose(1, 2)

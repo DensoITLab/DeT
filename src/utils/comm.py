@@ -13,10 +13,6 @@ import torch
 import torch.distributed as dist
 
 _LOCAL_PROCESS_GROUP = None
-"""
-A torch process group which only includes processes that on the same machine as the current process.
-This variable is set when processes are spawned by `launch()` in "engine/launch.py".
-"""
 
 
 def get_world_size() -> int:

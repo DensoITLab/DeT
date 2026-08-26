@@ -13,7 +13,7 @@ DeT makes detector-free matching trackable across multiple views by steering the
 - IMC/MegaDepth multi-view tracking and online SfM evaluation.
 
 Checkpoints, datasets, logs, and generated evaluation files are intentionally excluded from Git. Some internal module names and config keys still use `jamma` for compatibility with the upstream JamMa code structure.
-The upstream JamMa files are kept in the tree for compatibility; the public DeT demo entry point is `demo/demo_det.py`.
+Only the upstream JamMa files needed for DeT inference and evaluation are kept in the tree; the public DeT demo entry point is `demo/demo_det.py`.
 
 ## Installation
 
@@ -86,10 +86,11 @@ The evaluation entry points are:
 - `scripts/reproduce_test/paper_megadepth_0015_0022.sh`: MegaDepth `0015` and `0022`.
 - `test_imc_tracking.py`: IMC multi-view DeT track evaluation with epipolar, depth visibility, runtime, and FLOPs summaries.
 - `test_megadepth_tracking.py`: MegaDepth multi-view DeT track evaluation for 5-frame bags.
-- `test_imc_sfm.py`: online SfM evaluation used for IMC-style and MegaDepth 5-frame bags.
+- `test_imc_sfm.py`: online SfM evaluation for `--method det-jamma` and `--method nn-jamma`.
 
 Default data locations are `data/imc` and `data/megadepth`. Override them with `IMC_ROOT`, `MEGADEPTH_ROOT`, or `MEGADEPTH_SFM_ROOT`. Results are written under `outputs/paper/imc` and `outputs/paper/megadepth`.
 The MegaDepth script also accepts `15 22` and normalizes them to `0015 0022`.
+The tracking scripts accept `--methods jamma det-jamma jamma_legacy`; the wrapper scripts expose this as `METHODS`.
 
 ## Repository Layout
 

@@ -47,7 +47,6 @@ class MegaDepthDataset(Dataset):
         self.img_padding = img_padding
         self.depth_max_size = 2000 if depth_padding else None  # the upperbound of depthmaps size in megadepth.
 
-        # for training
         self.augment_fn = augment_fn if mode == 'train' else None
         self.coarse_scale = getattr(kwargs, 'coarse_scale', 0.125)  #
 

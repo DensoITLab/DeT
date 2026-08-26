@@ -13,7 +13,6 @@ from torchvision.transforms.functional import InterpolationMode
 
 
 try:
-    # for internel use only
     from .client import MEGADEPTH_CLIENT, SCANNET_CLIENT
 except Exception:
     MEGADEPTH_CLIENT = SCANNET_CLIENT = None
@@ -126,15 +125,15 @@ def pad_bottom_right_c(inp, pad_size, ret_mask=False):
 def read_megadepth_color(path, resize=None, df=None, padding=False):
     # read image
     image = Image.open(path)
-    w, h = image.width, image.height # 元画像サイズ（w1280, h960）
+    w, h = image.width, image.height
     w_new, h_new = get_resized_wh(image.width, image.height, resize) # w832, h624
-    w_new, h_new = get_divisible_wh(w_new, h_new, df) # 16の倍数にそろえる
+    w_new, h_new = get_divisible_wh(w_new, h_new, df)
     scale = torch.tensor([w/w_new, h/h_new], dtype=torch.float)
     resize_fun = transforms.Resize((h_new, w_new), InterpolationMode.BICUBIC)
     image = resize_fun(image)
     image = np.array(image, dtype=np.float32)
     if image.shape[2] == 4:
-        image = image[:, :, :3]  # RGBA → RGB に変換
+        image = image[:, :, :3]
     if len(image.shape) == 2:
         image = np.repeat(image[..., np.newaxis], 3, axis=2)
     image = image.transpose((2, 0, 1))

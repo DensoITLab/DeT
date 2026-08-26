@@ -181,8 +181,6 @@ def make_matching_figure_color_tri(
         for i, label0 in enumerate(labels0):
             axes[0].text(mkpts0[:, 0][i]-10, mkpts0[:, 1][i]-10, label0, fontsize=4)
 
-        #for i, label1 in enumerate(labels1):
-        #    axes[1].text(mkpts1[:, 0][i]-10, mkpts1[:, 1][i]-10, label1, fontsize=4)
 
         for i, label1 in enumerate(_labels1):
             axes[1].text(_mkpts1[:, 0][i]-10, _mkpts1[:, 1][i]-10, label1, fontsize=4)
@@ -203,8 +201,6 @@ def make_matching_figure_color_tri(
     text_.set_path_effects([path_effects.Stroke(linewidth=0.5, foreground='white'), path_effects.Normal()])
     # save or return figure
     if path:
-        #cax = fig.add_axes((0.05, 0.05, 0.9, 0.08))
-        #plt.colorbar(sc1, orientation='horizontal', cax=cax)
         plt.savefig(str(path), bbox_inches='tight', pad_inches=0.0, dpi=dpi)
         plt.close()
     else:
@@ -374,27 +370,14 @@ def make_matching_figure_color_track(
         fig.lines.extend(lines67)
         fig.lines.extend(lines78)
         fig.lines.extend(lines89)
-        #fig.lines.extend(dist_lines11)
-        #fig.lines.extend(dist_lines22)
-        #fig.lines.extend(dist_lines33)
-        #fig.lines.extend(dist_lines44)
-        #fig.lines.extend(dist_lines55)
-        #fig.lines.extend(dist_lines66)
-        #fig.lines.extend(dist_lines77)
-        #fig.lines.extend(dist_lines88)
 
         upper_limit_y = 960 // 2
         lower_limit_y = 0
         upper_limit_x = 10000
         lower_limit_x = 0
 
-        #upper_limit_y = 10000
-        #lower_limit_y = 0
-        #upper_limit_x = 10000
-        #lower_limit_x = 0
         max_point = 20
         point_count = 0
-        print('plot img0')
         cmap = plt.cm.plasma
         colors = cmap(np.linspace(0, 1, len(mkpts0)))
         for _point, color in zip(mkpts0, colors):
@@ -403,7 +386,6 @@ def make_matching_figure_color_track(
                     axes[0].plot(_point[0], _point[1], 'o', markersize=2, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img1')
         point_count = 0
         for _point, marker, color in zip(_mkpts1, _get_marker(valid_list11, 0), [_get_color(flag) for flag in valid_list11]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -417,7 +399,6 @@ def make_matching_figure_color_track(
                     axes[1].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img2')
         point_count = 0
         for _point, marker, color in zip(_mkpts2, _get_marker(valid_list22, 0), [_get_color(flag) for flag in valid_list22]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -431,7 +412,6 @@ def make_matching_figure_color_track(
                     axes[2].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img3')
         point_count = 0
         for _point, marker, color in zip(_mkpts3, _get_marker(valid_list33, 0), [_get_color(flag) for flag in valid_list33]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -445,7 +425,6 @@ def make_matching_figure_color_track(
                     axes[3].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img4')
         point_count = 0
         for _point, marker, color in zip(_mkpts4, _get_marker(valid_list44, 0), [_get_color(flag) for flag in valid_list44]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -459,7 +438,6 @@ def make_matching_figure_color_track(
                     axes[4].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img5')
         point_count = 0
         for _point, marker, color in zip(_mkpts5, _get_marker(valid_list55, 0), [_get_color(flag) for flag in valid_list55]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -473,7 +451,6 @@ def make_matching_figure_color_track(
                     axes[5].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img6')
         point_count = 0
         for _point, marker, color in zip(_mkpts6, _get_marker(valid_list66, 0), [_get_color(flag) for flag in valid_list66]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -487,7 +464,6 @@ def make_matching_figure_color_track(
                     axes[6].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img7')
         point_count = 0
         for _point, marker, color in zip(_mkpts7, _get_marker(valid_list77, 0), [_get_color(flag) for flag in valid_list77]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -501,7 +477,6 @@ def make_matching_figure_color_track(
                     axes[7].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img8')
         point_count = 0
         for _point, marker, color in zip(_mkpts8, _get_marker(valid_list88, 0), [_get_color(flag) for flag in valid_list88]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -515,7 +490,6 @@ def make_matching_figure_color_track(
                     axes[8].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img9')
         point_count = 0
         for _point in mkpts9:
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -525,47 +499,6 @@ def make_matching_figure_color_track(
 
 
 
-        """
-        sc0 = axes[0].scatter(mkpts0[:, 0], mkpts0[:, 1],  s=4, alpha=1.0, marker='o')
-        sc1 = axes[1].scatter(mkpts1[:, 0], mkpts1[:, 1],  s=4, alpha=1.0, marker=_get_marker(bind_list11, 0))
-        _sc1 = axes[1].scatter(_mkpts1[:, 0], _mkpts1[:, 1],  c=[_get_color(flag) for flag in valid_list11], s=10, alpha=0.5, marker=_get_marker(bind_list11, 1))
-        sc2 = axes[2].scatter(mkpts2[:, 0], mkpts2[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list11], alpha=1.0, marker=_get_marker(bind_list22, 0))
-        _sc2 = axes[2].scatter(_mkpts2[:, 0], _mkpts2[:, 1],  c=[_get_color(flag) for flag in valid_list22], s=10, alpha=0.5, marker=_get_marker(bind_list22, 1))
-        sc3 = axes[3].scatter(mkpts3[:, 0], mkpts3[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list22], alpha=1.0, marker=_get_marker(bind_list33, 0))
-        _sc3 = axes[3].scatter(_mkpts3[:, 0], _mkpts3[:, 1],  c=[_get_color(flag) for flag in valid_list33], s=10, alpha=0.5, marker=_get_marker(bind_list33, 1))
-        sc4 = axes[4].scatter(mkpts4[:, 0], mkpts4[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list33], alpha=1.0, marker=_get_marker(bind_list44, 0))
-        _sc4 = axes[4].scatter(_mkpts4[:, 0], _mkpts4[:, 1],  c=[_get_color(flag) for flag in valid_list44], s=10, alpha=0.5, marker=_get_marker(bind_list44, 1))
-        sc5 = axes[5].scatter(mkpts5[:, 0], mkpts5[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list44], alpha=1.0, marker=_get_marker(bind_list55, 0))
-        _sc5 = axes[5].scatter(_mkpts5[:, 0], _mkpts5[:, 1],  c=[_get_color(flag) for flag in valid_list55], s=10, alpha=0.5, marker=_get_marker(bind_list55, 1))
-        sc6 = axes[6].scatter(mkpts6[:, 0], mkpts6[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list55], alpha=1.0, marker=_get_marker(bind_list66, 0))
-        _sc6 = axes[6].scatter(_mkpts6[:, 0], _mkpts6[:, 1],  c=[_get_color(flag) for flag in valid_list66], s=10, alpha=0.5, marker=_get_marker(bind_list66, 1))
-        sc7 = axes[7].scatter(mkpts7[:, 0], mkpts7[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list66], alpha=1.0, marker=_get_marker(bind_list77, 0))
-        _sc7 = axes[7].scatter(_mkpts7[:, 0], _mkpts7[:, 1],  c=[_get_color(flag) for flag in valid_list77], s=10, alpha=0.5, marker=_get_marker(bind_list77, 1))
-        sc8 = axes[8].scatter(mkpts8[:, 0], mkpts8[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list77], alpha=1.0, marker=_get_marker(bind_list88, 0))
-        _sc8 = axes[8].scatter(_mkpts8[:, 0], _mkpts8[:, 1],  c=[_get_color(flag) for flag in valid_list88], s=10, alpha=0.5, marker=_get_marker(bind_list88, 1))
-        sc9 = axes[9].scatter(mkpts9[:, 0], mkpts9[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list88], alpha=1.0, marker='o')
-
-        
-
-        """
-        """
-        labels0 = [str(num) for num in range(1,len(mkpts0)+1)]
-        labels1 = [str(num) for num in range(1,len(mkpts1)+1)]
-        _labels1 = [str(num) for num in range(1,len(_mkpts1)+1)]
-        labels2 = [str(num) for num in range(1,len(mkpts2)+1)]
-
-        for i, label0 in enumerate(labels0):
-            axes[0].text(mkpts0[:, 0][i]-10, mkpts0[:, 1][i]-10, label0, fontsize=4)
-
-        #for i, label1 in enumerate(labels1):
-        #    axes[1].text(mkpts1[:, 0][i]-10, mkpts1[:, 1][i]-10, label1, fontsize=4)
-
-        for i, label1 in enumerate(_labels1):
-            axes[1].text(_mkpts1[:, 0][i]-10, _mkpts1[:, 1][i]-10, label1, fontsize=4)
-        
-        for i, label2 in enumerate(labels2):
-            axes[2].text(mkpts2[:, 0][i]-10, mkpts2[:, 1][i]-10, label2, fontsize=4)
-        """
         axes[0].text(10.0, 950.0, f'image:{0}', fontsize=6)
         axes[1].text(10.0, 950.0, f'image:{1}', fontsize=6 )
         axes[2].text(10.0, 950.0, f'image:{2}', fontsize=6 )
@@ -618,8 +551,6 @@ def make_matching_figure_color_track(
 
     # save or return figure
     if path:
-        #cax = fig.add_axes((0.05, 0.05, 0.9, 0.08))
-        #plt.colorbar(sc1, orientation='horizontal', cax=cax)
         plt.savefig(str(path), bbox_inches='tight', pad_inches=0.0, dpi=dpi)
         plt.close()
     else:
@@ -701,106 +632,6 @@ def make_matching_figure_color_track_point(
         _fkpts7 = transFigure.transform(axes[7].transData.transform(_mkpts7))
         _fkpts8 = transFigure.transform(axes[8].transData.transform(_mkpts8))
 
-        """
-        # draw lines
-        lines01 = [matplotlib.lines.Line2D((fkpts0[i, 0], fkpts1[i, 0]),
-                                            (fkpts0[i, 1], fkpts1[i, 1]),
-                                            transform=fig.transFigure, linewidth=0.8, c='blue')
-                                        for i in range(len(mkpts0))]
-        
-        lines12 = [matplotlib.lines.Line2D((_fkpts1[i, 0], fkpts2[i, 0]),
-                                            (_fkpts1[i, 1], fkpts2[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list11][i], linewidth=0.8)
-                                        for i in range(len(_mkpts1))]
-
-        lines23 = [matplotlib.lines.Line2D((_fkpts2[i, 0], fkpts3[i, 0]),
-                                            (_fkpts2[i, 1], fkpts3[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list22][i], linewidth=0.8)
-                                        for i in range(len(_mkpts2))]
-        
-        lines34 = [matplotlib.lines.Line2D((_fkpts3[i, 0], fkpts4[i, 0]),
-                                            (_fkpts3[i, 1], fkpts4[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list33][i], linewidth=0.8)
-                                        for i in range(len(_mkpts3))]
-        
-        lines45 = [matplotlib.lines.Line2D((_fkpts4[i, 0], fkpts5[i, 0]),
-                                            (_fkpts4[i, 1], fkpts5[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list44][i], linewidth=0.8)
-                                        for i in range(len(_mkpts4))]
-        
-        lines56 = [matplotlib.lines.Line2D((_fkpts5[i, 0], fkpts6[i, 0]),
-                                            (_fkpts5[i, 1], fkpts6[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list55][i], linewidth=0.8)
-                                        for i in range(len(_mkpts5))]
-        
-        lines67 = [matplotlib.lines.Line2D((_fkpts6[i, 0], fkpts7[i, 0]),
-                                            (_fkpts6[i, 1], fkpts7[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list66][i], linewidth=0.8)
-                                        for i in range(len(_mkpts6))]
-        
-        lines78 = [matplotlib.lines.Line2D((_fkpts7[i, 0], fkpts8[i, 0]),
-                                            (_fkpts7[i, 1], fkpts8[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list77][i], linewidth=0.8)
-                                        for i in range(len(_mkpts7))]
-        
-        lines89 = [matplotlib.lines.Line2D((_fkpts8[i, 0], fkpts9[i, 0]),
-                                            (_fkpts8[i, 1], fkpts9[i, 1]),
-                                            transform=fig.transFigure, c=[_get_color(flag) for flag in valid_list88][i], linewidth=0.8)
-                                        for i in range(len(_mkpts8))]
-
-        
-        dist_lines11 = [matplotlib.lines.Line2D((_fkpts1[i, 0], fkpts1[t, 0]),
-                                            (_fkpts1[i, 1], fkpts1[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list11]
-        dist_lines22 = [matplotlib.lines.Line2D((_fkpts2[i, 0], fkpts2[t, 0]),
-                                            (_fkpts2[i, 1], fkpts2[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list22]
-        dist_lines33 = [matplotlib.lines.Line2D((_fkpts3[i, 0], fkpts3[t, 0]),
-                                            (_fkpts3[i, 1], fkpts3[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list33]
-        dist_lines44 = [matplotlib.lines.Line2D((_fkpts4[i, 0], fkpts4[t, 0]),
-                                            (_fkpts4[i, 1], fkpts4[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list44]
-        dist_lines55 = [matplotlib.lines.Line2D((_fkpts5[i, 0], fkpts5[t, 0]),
-                                            (_fkpts5[i, 1], fkpts5[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list55]
-        dist_lines66 = [matplotlib.lines.Line2D((_fkpts6[i, 0], fkpts6[t, 0]),
-                                            (_fkpts6[i, 1], fkpts6[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list66]
-        dist_lines77 = [matplotlib.lines.Line2D((_fkpts7[i, 0], fkpts7[t, 0]),
-                                            (_fkpts7[i, 1], fkpts7[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list77]
-        dist_lines88 = [matplotlib.lines.Line2D((_fkpts8[i, 0], fkpts8[t, 0]),
-                                            (_fkpts8[i, 1], fkpts8[t, 1]),
-                                            transform=fig.transFigure, c= 'green', linewidth=0.4)
-                                        for i, t in bind_list88]
-
-        fig.lines.extend(lines01)
-        fig.lines.extend(lines12)
-        fig.lines.extend(lines23)
-        fig.lines.extend(lines34)
-        fig.lines.extend(lines45)
-        fig.lines.extend(lines56)
-        fig.lines.extend(lines67)
-        fig.lines.extend(lines78)
-        fig.lines.extend(lines89)
-        fig.lines.extend(dist_lines11)
-        fig.lines.extend(dist_lines22)
-        fig.lines.extend(dist_lines33)
-        fig.lines.extend(dist_lines44)
-        fig.lines.extend(dist_lines55)
-        fig.lines.extend(dist_lines66)
-        fig.lines.extend(dist_lines77)
-        fig.lines.extend(dist_lines88)
-
-        """
 
 
         upper_limit_y = 960 // 2 - 10
@@ -814,7 +645,6 @@ def make_matching_figure_color_track_point(
         lower_limit_x = 0
         max_point = 10000
         point_count = 0
-        print('plot img0')
         cmap = plt.cm.plasma
         colors = cmap(np.linspace(0, 1, len(mkpts0)))
         for _point, color in zip(mkpts0, colors):
@@ -823,7 +653,6 @@ def make_matching_figure_color_track_point(
                     axes[0].plot(_point[0], _point[1], 'o', markersize=2, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img1')
         point_count = 0
         for _point, marker, color in zip(_mkpts1, _get_marker(valid_list11, 0), [_get_color(flag) for flag in valid_list11]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -837,7 +666,6 @@ def make_matching_figure_color_track_point(
                     axes[1].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img2')
         point_count = 0
         for _point, marker, color in zip(_mkpts2, _get_marker(valid_list22, 0), [_get_color(flag) for flag in valid_list22]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -851,7 +679,6 @@ def make_matching_figure_color_track_point(
                     axes[2].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img3')
         point_count = 0
         for _point, marker, color in zip(_mkpts3, _get_marker(valid_list33, 0), [_get_color(flag) for flag in valid_list33]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -865,7 +692,6 @@ def make_matching_figure_color_track_point(
                     axes[3].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img4')
         point_count = 0
         for _point, marker, color in zip(_mkpts4, _get_marker(valid_list44, 0), [_get_color(flag) for flag in valid_list44]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -879,7 +705,6 @@ def make_matching_figure_color_track_point(
                     axes[4].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img5')
         point_count = 0
         for _point, marker, color in zip(_mkpts5, _get_marker(valid_list55, 0), [_get_color(flag) for flag in valid_list55]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -893,7 +718,6 @@ def make_matching_figure_color_track_point(
                     axes[5].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img6')
         point_count = 0
         for _point, marker, color in zip(_mkpts6, _get_marker(valid_list66, 0), [_get_color(flag) for flag in valid_list66]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -907,7 +731,6 @@ def make_matching_figure_color_track_point(
                     axes[6].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img7')
         point_count = 0
         for _point, marker, color in zip(_mkpts7, _get_marker(valid_list77, 0), [_get_color(flag) for flag in valid_list77]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -921,7 +744,6 @@ def make_matching_figure_color_track_point(
                     axes[7].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img8')
         point_count = 0
         for _point, marker, color in zip(_mkpts8, _get_marker(valid_list88, 0), [_get_color(flag) for flag in valid_list88]):
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -935,7 +757,6 @@ def make_matching_figure_color_track_point(
                     axes[8].plot(_point[0], _point[1], marker=marker, markersize=1.5, alpha=1.0, c=color)
                     point_count += 1
 
-        print('plot img9')
         point_count = 0
         for _point in mkpts9:
             if lower_limit_x < _point[0] < upper_limit_x and lower_limit_y < _point[1] < upper_limit_y:
@@ -944,58 +765,6 @@ def make_matching_figure_color_track_point(
                     point_count += 1
 
 
-        """
-        sc0 = axes[0].scatter(mkpts0[:, 0], mkpts0[:, 1],  s=4, alpha=1.0, marker='o')
-        sc1 = axes[1].scatter(mkpts1[:, 0], mkpts1[:, 1],  s=4, alpha=1.0, marker=_get_marker(bind_list11, 0))
-        _sc1 = axes[1].scatter(_mkpts1[:, 0], _mkpts1[:, 1],  c=[_get_color(flag) for flag in valid_list11], s=10, alpha=0.5, marker=_get_marker(bind_list11, 1))
-        sc2 = axes[2].scatter(mkpts2[:, 0], mkpts2[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list11], alpha=1.0, marker=_get_marker(bind_list22, 0))
-        _sc2 = axes[2].scatter(_mkpts2[:, 0], _mkpts2[:, 1],  c=[_get_color(flag) for flag in valid_list22], s=10, alpha=0.5, marker=_get_marker(bind_list22, 1))
-        sc3 = axes[3].scatter(mkpts3[:, 0], mkpts3[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list22], alpha=1.0, marker=_get_marker(bind_list33, 0))
-        _sc3 = axes[3].scatter(_mkpts3[:, 0], _mkpts3[:, 1],  c=[_get_color(flag) for flag in valid_list33], s=10, alpha=0.5, marker=_get_marker(bind_list33, 1))
-        sc4 = axes[4].scatter(mkpts4[:, 0], mkpts4[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list33], alpha=1.0, marker=_get_marker(bind_list44, 0))
-        _sc4 = axes[4].scatter(_mkpts4[:, 0], _mkpts4[:, 1],  c=[_get_color(flag) for flag in valid_list44], s=10, alpha=0.5, marker=_get_marker(bind_list44, 1))
-        sc5 = axes[5].scatter(mkpts5[:, 0], mkpts5[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list44], alpha=1.0, marker=_get_marker(bind_list55, 0))
-        _sc5 = axes[5].scatter(_mkpts5[:, 0], _mkpts5[:, 1],  c=[_get_color(flag) for flag in valid_list55], s=10, alpha=0.5, marker=_get_marker(bind_list55, 1))
-        sc6 = axes[6].scatter(mkpts6[:, 0], mkpts6[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list55], alpha=1.0, marker=_get_marker(bind_list66, 0))
-        _sc6 = axes[6].scatter(_mkpts6[:, 0], _mkpts6[:, 1],  c=[_get_color(flag) for flag in valid_list66], s=10, alpha=0.5, marker=_get_marker(bind_list66, 1))
-        sc7 = axes[7].scatter(mkpts7[:, 0], mkpts7[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list66], alpha=1.0, marker=_get_marker(bind_list77, 0))
-        _sc7 = axes[7].scatter(_mkpts7[:, 0], _mkpts7[:, 1],  c=[_get_color(flag) for flag in valid_list77], s=10, alpha=0.5, marker=_get_marker(bind_list77, 1))
-        sc8 = axes[8].scatter(mkpts8[:, 0], mkpts8[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list77], alpha=1.0, marker=_get_marker(bind_list88, 0))
-        _sc8 = axes[8].scatter(_mkpts8[:, 0], _mkpts8[:, 1],  c=[_get_color(flag) for flag in valid_list88], s=10, alpha=0.5, marker=_get_marker(bind_list88, 1))
-        sc9 = axes[9].scatter(mkpts9[:, 0], mkpts9[:, 1],  s=4, c= [_get_color(flag) for flag in valid_list88], alpha=1.0, marker='o')
-
-        
-
-        """
-        """
-        labels0 = [str(num) for num in range(1,len(mkpts0)+1)]
-        labels1 = [str(num) for num in range(1,len(mkpts1)+1)]
-        _labels1 = [str(num) for num in range(1,len(_mkpts1)+1)]
-        labels2 = [str(num) for num in range(1,len(mkpts2)+1)]
-
-        for i, label0 in enumerate(labels0):
-            axes[0].text(mkpts0[:, 0][i]-10, mkpts0[:, 1][i]-10, label0, fontsize=4)
-
-        #for i, label1 in enumerate(labels1):
-        #    axes[1].text(mkpts1[:, 0][i]-10, mkpts1[:, 1][i]-10, label1, fontsize=4)
-
-        for i, label1 in enumerate(_labels1):
-            axes[1].text(_mkpts1[:, 0][i]-10, _mkpts1[:, 1][i]-10, label1, fontsize=4)
-        
-        for i, label2 in enumerate(labels2):
-            axes[2].text(mkpts2[:, 0][i]-10, mkpts2[:, 1][i]-10, label2, fontsize=4)
-        
-        axes[0].text(10.0, 950.0, f'image:{0}', fontsize=6)
-        axes[1].text(10.0, 950.0, f'image:{1}', fontsize=6 )
-        axes[2].text(10.0, 950.0, f'image:{2}', fontsize=6 )
-        axes[3].text(10.0, 950.0, f'image:{3}', fontsize=6 )
-        axes[4].text(10.0, 950.0, f'image:{4}', fontsize=6 )
-        axes[5].text(10.0, 950.0, f'image:{5}', fontsize=6 )
-        axes[6].text(10.0, 950.0, f'image:{6}', fontsize=6 )
-        axes[7].text(10.0, 950.0, f'image:{7}', fontsize=6 )
-        axes[8].text(10.0, 950.0, f'image:{8}', fontsize=6 )
-        axes[9].text(10.0, 950.0, f'image:{9}', fontsize=6 )
-        """
 
 
     # put txts
@@ -1039,28 +808,8 @@ def make_matching_figure_color_track_point(
 
     # save or return figure
     if path:
-        #cax = fig.add_axes((0.05, 0.05, 0.9, 0.08))
-        #plt.colorbar(axes[0], orientation='horizontal', cax=cax)
         plt.savefig(str(path), bbox_inches='tight', pad_inches=0.0, dpi=dpi)
         plt.close()
-        print(f'save fig {str(path)}')
-        """
-        if result_path:
-           import json
-           match_json = {}
-           match_json['01'] = [(kpt0.tolist(), kpt1.tolist()) for kpt0, kpt1 in zip(mkpts0, mkpts1)]
-           match_json['12'] = [(_kpt1.tolist(), kpt2.tolist()) for _kpt1, kpt2 in zip(_mkpts1, mkpts2)]
-           match_json['23'] = [(_kpt2.tolist(), kpt3.tolist()) for _kpt2, kpt3 in zip(_mkpts2, mkpts3)]
-           match_json['34'] = [(_kpt3.tolist(), kpt4.tolist()) for _kpt3, kpt4 in zip(_mkpts3, mkpts4)]
-           match_json['45'] = [(_kpt4.tolist(), kpt5.tolist()) for _kpt4, kpt5 in zip(_mkpts4, mkpts5)]
-           match_json['56'] = [(_kpt5.tolist(), kpt6.tolist()) for _kpt5, kpt6 in zip(_mkpts5, mkpts6)]
-           match_json['67'] = [(_kpt6.tolist(), kpt7.tolist()) for _kpt6, kpt7 in zip(_mkpts6, mkpts7)]
-           match_json['78'] = [(_kpt7.tolist(), kpt8.tolist()) for _kpt7, kpt8 in zip(_mkpts7, mkpts8)]
-           match_json['89'] = [(_kpt8.tolist(), kpt9.tolist()) for _kpt8, kpt9 in zip(_mkpts8, mkpts9)]
-           with open(result_path, 'w') as f:
-               json.dump(match_json, f)
-               print(f'save json {str(result_path)}')
-        """
 
     else:
         return fig
@@ -1095,7 +844,6 @@ def make_matching_figure_color_dict(
                         color=(255,255,0,220)):
         img = Image.new('RGBA', (width, height), (0,0,0,0))
         draw = ImageDraw.Draw(img)
-        # フォント（なければデフォルトビットマップ）
         if font is None:
             try:
                 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
@@ -1109,16 +857,13 @@ def make_matching_figure_color_dict(
                 t = j*nx + i
                 cx = int((i + 0.5) * cell)
                 cy = int((j + 0.5) * cell)
-                # 中央寄せ（anchor='mm' は Pillow>=8）
                 try:
                     draw.text((cx, cy), str(t), fill=color, font=font, anchor='mm')
                 except TypeError:
-                    # anchor未対応環境：手動で中心調整（簡易）
                     w, h = draw.textsize(str(t), font=font)
                     draw.text((cx - w//2, cy - h//2), str(t), fill=color, font=font)
         return np.asarray(img)
 
-    # 1回作って全サブプロットで使い回す
     overlay_rgba = make_number_overlay(width=832, height=832, cell=8, font_size=1, color=(255,255,0,220))
 
     # draw matches
@@ -1135,17 +880,17 @@ def make_matching_figure_color_dict(
 
         max_point = 150
 
-        upper_limit_y = 152 # 右上建物
+        upper_limit_y = 152
         lower_limit_y = 48    
         upper_limit_x = 832     
         lower_limit_x = 600    
 
-        upper_limit_y = 288 # 左中央壁
+        upper_limit_y = 288
         lower_limit_y = 256    
         upper_limit_x = 336     
         lower_limit_x = 248 
 
-        upper_limit_y = 312 # 右扉
+        upper_limit_y = 312
         lower_limit_y = 208    
         upper_limit_x = 824     
         lower_limit_x = 728 
@@ -1177,8 +922,6 @@ def make_matching_figure_color_dict(
         axes[i].get_xaxis().set_ticks([])
         for spine in axes[i].spines.values():
             spine.set_visible(False)
-        #axes[i].set_xlim(0, W)
-        #axes[i].set_ylim(H, 0)        # 上が0、下がH になる
         axes[i].autoscale(False) 
         axes[i].set_xticks(np.arange(0, 833, 104))
         axes[i].set_yticks(np.arange(0, 833, 104))
@@ -1186,11 +929,6 @@ def make_matching_figure_color_dict(
         axes[i].set_yticks(np.arange(0, 833, 8), minor=True)
         axes[i].grid(which="major", linestyle="-", linewidth=0.2)
         axes[i].grid(which="minor", linestyle=":", linewidth=0.05)
-        #axes[i].imshow(overlay_rgba, interpolation="nearest")
-        #if is_roi:
-            #rect = matplotlib.patches.Rectangle((lower_limit_x, lower_limit_y), upper_limit_x-lower_limit_x, upper_limit_y-lower_limit_y, edgecolor='r', facecolor='none', linewidth=0.2, transform=axes[i].transData)
-            #axes[i].add_patch(rect)
-            #axes[i].imshow(overlay_rgba, interpolation="nearest")
         
     plt.tight_layout(pad=1)
     
@@ -1201,14 +939,13 @@ def make_matching_figure_color_dict(
         axes[0].scatter(kpts0[:, 0], kpts0[:, 1], c='w', s=1)
         axes[1].scatter(kpts1[:, 0], kpts1[:, 1], c='w', s=1)
 
-    fig.canvas.draw()  # 座標変換のために必要
+    fig.canvas.draw()
 
     point_count = 0
     plot_track_id_list = []
     out_track_id_list = []
     first_out_list = []
     other_out_list = []
-    print('draw tracks')
     track_number = 0
     for track_id, track_data in track_dict.items():
         start_id = track_data['start_id']
@@ -1219,7 +956,6 @@ def make_matching_figure_color_dict(
         else:
             points_sp = points
         is_draw = False
-        # フレーム毎のデータ座標を保存（線を引く時に使う）
         data_pts = {}  # {frame_idx: (x,y)}
 
         print_pts = {}
@@ -1228,7 +964,6 @@ def make_matching_figure_color_dict(
             track_number += 1
             continue
 
-        #if track_id not in track_id_list:
         #    continue
 
         for i, ((x, y), (sp_x,sp_y))  in enumerate(zip(points, points_sp)):
@@ -1237,7 +972,6 @@ def make_matching_figure_color_dict(
             if not (0 <= frame_idx < len(axes)):
                 continue
 
-            # ROI フィルタ
             if not (lower_limit_x <= x <= upper_limit_x and lower_limit_y <= y <= upper_limit_y):
                 continue
 
@@ -1245,7 +979,6 @@ def make_matching_figure_color_dict(
                 is_draw = True
 
             if (point_count < max_point) and is_draw:
-                # 点を打つ（色は元ロジックに合わせて三色）
                 if frame_idx == start_id:
                     c = 'green'
                 elif frame_idx == end_id:
@@ -1275,7 +1008,6 @@ def make_matching_figure_color_dict(
 
 
 
-        # 点を打ち終わってから隣接フレームを結ぶ（存在チェック）
         if draw_line and is_draw:
             for t in range(start_id, end_id):
                 if (t in data_pts) and (t+1 in data_pts):
@@ -1288,8 +1020,8 @@ def make_matching_figure_color_dict(
                         out_track_id_list.append(track_id)
                     con = ConnectionPatch(
                         xyA=(x0, y0), xyB=(x1, y1),
-                        coordsA=axes[t].transData,      # A軸のデータ座標
-                        coordsB=axes[t+1].transData,    # B軸のデータ座標
+                        coordsA=axes[t].transData,
+                        coordsB=axes[t+1].transData,
                         axesA=axes[t], axesB=axes[t+1],
                         color=c, lw=0.1
                     )
@@ -1315,12 +1047,7 @@ def make_matching_figure_color_dict(
                 
                     
 
-    #print(plot_track_id_list)
-    print(f'out track id list: {set(out_track_id_list)}')
-    print(f'first out track id list: {set(first_out_list)}')
-    print(f'out track : {len(out_track_id_list)}, first{len(set(first_out_list))} other{len(set(other_out_list))} / {track_number}')
     if super_point:
-        print('plot superpoint')
         if data_01 is not None:
             for (x, y) in data_01['sp0'].cpu().numpy():
                 if not (lower_limit_x <= x <= upper_limit_x and lower_limit_y <= y <= upper_limit_y):
@@ -1423,9 +1150,6 @@ def make_matching_figure_color_dict(
 
     # save or return figure
     if path:
-        #cax = fig.add_axes((0.05, 0.05, 0.9, 0.08))
-        #plt.colorbar(sc1, orientation='horizontal', cax=cax)
-        print(f'save fig {str(path)}')
         plt.savefig(str(path), bbox_inches='tight', pad_inches=0.0, dpi=dpi)
         plt.close()
     else:
@@ -1442,7 +1166,6 @@ def make_evaluation_figure_color(data, b_id, alpha='dynamic', path=None, dpi=150
     kpts0 = data['mkpts0_f'][b_mask].cpu().numpy()
     kpts1 = data['mkpts1_f'][b_mask].cpu().numpy()
 
-    # for megadepth, we visualize matches on the resized image
     if 'scale0' in data:
         kpts0 = kpts0 / data['scale0'][b_id].cpu().numpy()[[1, 0]]
         kpts1 = kpts1 / data['scale1'][b_id].cpu().numpy()[[1, 0]]
@@ -1634,7 +1357,6 @@ def make_evaluation_figure_wheel(data, b_id=0, path=None, topk=10000):
     kpts0 = kpts0[idx]
     kpts1 = kpts1[idx]
 
-    # for megadepth, we visualize matches on the resized image
     if 'scale0' in data:
         kpts0 = kpts0 / data['scale0'][b_id][[0, 1]]
         kpts1 = kpts1 / data['scale1'][b_id][[0, 1]]
@@ -1661,7 +1383,6 @@ def make_confidence_figure(data, b_id=0, path=None, dpi=150, topk=10000):
     idx = torch.topk(data['mconf_f'], num, 0).indices
     kpts0 = data['mkpts0_f'][idx].detach().cpu().numpy()
     kpts1 = data['mkpts1_f'][idx].detach().cpu().numpy()
-    print(idx)
     if 'scale0' in data:
         kpts0 = kpts0 / data['scale0'][b_id].cpu().numpy()[[1, 0]]
         kpts1 = kpts1 / data['scale1'][b_id].cpu().numpy()[[1, 0]]
@@ -1670,9 +1391,6 @@ def make_confidence_figure(data, b_id=0, path=None, dpi=150, topk=10000):
     # normalize the score to [0, 1]
     score = (score - score.min()) / (score.max() - score.min())
     color = cm.jet(score)
-    #color = cm.get_cmap('jet')
-    #print(color)
-    #color = kp_color(kpts0[:,1], kpts0[:,0], (lh, lw))
 
     text = [
         f'#Matches {len(kpts0)}',
@@ -1721,26 +1439,22 @@ def make_confidence_figure_tri(data, data_tri,b_id=0, path=None, dpi=150, topk=1
             dist_i = cor_idx
             best_kpt = kpts1_tri[cor_idx]
         if dist_i is not None:
-            print(f"Found match in tri: {best_kpt} ({kpts1_tri_detail_fine_window[cor_idx]} + {kpts1_tri_detail_f[cor_idx]} -[2 2] + {kpts1_tri_detail_ref[cor_idx]})  →  {kpts1[t]} ({kpts1_detail_fine_window[t]} + {kpts1_detail_f[t]} -[2 2] + {kpts1_detail_ref[t]}) dist: {dist}")
             cor_indices.append(dist_i)
             bind_list.append([len(cor_indices)-1, t])
             founds += 1
             valid_list.append(True if dist <= 2*np.sqrt(2) else False)
     valid_num = np.array(valid_list).sum()
-    print(f"Found {founds}/{len(kpts1)} matches in tri. true matches: {valid_num}")
     
     for add_idx in idx2.detach().cpu().numpy():
         if len(cor_indices) == num:
             break
         if add_idx not in cor_indices:
             cor_indices.append(add_idx)
-            print(f"Adding {add_idx} to cor_indices")
             valid_list.append('new')
     assert len(cor_indices) == num
     _kpts1 = data_tri['mkpts0_f1'][cor_indices].detach().cpu().numpy()
     kpts2 = data_tri['mkpts1_f1'][cor_indices].detach().cpu().numpy()
 
-    print(f"Number of kpts0: {len(kpts0)}, kpts1: {len(kpts1)}, _kpts1: {len(_kpts1)}, kpts2: {len(kpts2)}")
     if 'scale0' in data:
         kpts0 = kpts0 / data['scale0'][b_id].cpu().numpy()[[1, 0]]
         kpts1 = kpts1 / data['scale1'][b_id].cpu().numpy()[[1, 0]]
@@ -1748,20 +1462,13 @@ def make_confidence_figure_tri(data, data_tri,b_id=0, path=None, dpi=150, topk=1
     if 'scale0' in data_tri:
         _kpts1 = _kpts1 / data_tri['scale0'][b_id].cpu().numpy()[[1, 0]]
         kpts2 = kpts2 / data_tri['scale1'][b_id].cpu().numpy()[[1, 0]]
-    #score = data['mconf_f'][idx].cpu().numpy()
 
     # normalize the score to [0, 1]
-    #score = (score - score.min()) / (score.max() - score.min())
-    #color = cm.jet(score)
-    #color = cm.get_cmap('jet')
-    #print(color)
-    #color = kp_color(kpts0[:,1], kpts0[:,0], (lh, lw))
 
     text = [
         f'#Matches {len(kpts0)} (founds: {founds}) 2√2px matches: {valid_num}'
     ]
     # make the figure
-    print(f"Making figure.")
     fig = make_matching_figure_color_tri(img0, img1, img2, kpts0, kpts1, _kpts1, kpts2, bind_list, valid_list,
                                   text=text, path=path, dpi=dpi, start_idx=start_idx)
     return fig, cor_indices
@@ -1771,7 +1478,6 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
                                  b_id=0, dpi=150, topk=10000, mode=0, _all=False, add_mode=0, result_path=None, 
                                  is_origin_img=False, origin_wh=None, new_wh=None, draw_line=False, img_num=10, is_roi=False, dx=0, dy=0):
 
-    # 画像読み込み
     img0 = data_01['imagec_0'][b_id]
     img1 = data_01['imagec_1'][b_id]
     img0 = img0 * (imagenet_std[:, None, None].to(img0.device)) + (imagenet_mean[:, None, None].to(img0.device))
@@ -1882,12 +1588,9 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
             img9 = _restore_img(img9, data_89['mask1'], idx=9)
 
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_01['mconf_f']) if len(data_01['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_01['mconf_f'], num, 0).indices
     mconf01 = data_01['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf01.min()} ~ {mconf01.max()}")
     kpts0 = data_01['mkpts0_f'][idx].detach().cpu().numpy()
     kpts1 = data_01['mkpts1_f'][idx].detach().cpu().numpy()
     kpts0_f_windows, kpts0_coarse_4s, kpts0_subrefs = data_01['mkpts0_f1_window'].detach().cpu().numpy(), data_01['mkpts0_f1_fine'].detach().cpu().numpy(), data_01['mkpts0_subref'].detach().cpu().numpy()
@@ -1896,7 +1599,6 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
     kpts1_f_window, kpts1_coarse_4, kpts1_subref = kpts1_f_windows[idx.detach().cpu().numpy()], kpts1_coarse_4s[idx.detach().cpu().numpy()], kpts1_subrefs[idx.detach().cpu().numpy()]
 
 
-    # kptsN_searchからkptsNと一番対応する特徴点を探すための特徴点の集まり
     if data_12 is not None:
         kpts1_search = data_12['mkpts0_f'].detach().cpu().numpy()
 
@@ -1920,7 +1622,6 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
     
     if data_89 is not None:
         kpts8_search = data_89['mkpts0_f'].detach().cpu().numpy()
-    #print(len(kpts1_search), len(kpts2_search), len(kpts3_search), len(kpts4_search), len(kpts5_search), len(kpts6_search), len(kpts7_search), len(kpts8_search))
 
     dist_thr = 0
 
@@ -2018,7 +1719,6 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
 
         for track_id, track in track_json.items():
             track['points'] = _restore_kpts(np.array(track['points'])).tolist()
-            # diff_points は (N, 2, 2) のため、ペアごとに処理
             if 'diff_points' in track and len(track['diff_points']) > 0:
                 restored_diff_points = []
                 for pair in track['diff_points']:
@@ -2037,7 +1737,6 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
             track['diff_points'] = np.array(track['diff_points']).tolist()
         with open(result_path, 'w') as f:
             json.dump(track_json, f, indent=2)
-            print(f"Saved track json to {result_path}")
 
     # make the figure
     make_figure = False
@@ -2084,18 +1783,13 @@ def _find_valid_match_points(kpts_search, origin_kpts, search_data, kpts_num, b_
         if cor_idx < len(kpts_search):
             dist_i = cor_idx
             best_kpt = kpts_search[cor_idx]
-            if dist >= 200:
-                print(dist)
         if (dist_i is not None) and (dist <= dist_thr):
-            #print(f"Found match in search: {best_kpt} ({kpts1_search_detail_fine_window[cor_idx]} + {kpts1_search_detail_f[cor_idx]} -[2 2] + {kpts1_search_detail_ref[cor_idx]})  →  {kpts1[t]} ({kpts1_detail_fine_window[t]} + {kpts1_detail_f[t]} -[2 2] + {kpts1_detail_ref[t]}) dist: {dist}")
-            #print(f"Found match in search: {best_kpt}  →  {origin_kpts[t]} dist: {dist}")
             valid_indices.append(dist_i)
             bind_list.append([len(valid_indices)-1, t])
             founds += 1
             valid_list.append(True if dist <= 0 else False)
             kpts_search[dist_i] = np.array([100000, 100000])  # remove the matched point from search
         else:
-            #print(f"No match found in search for {origin_kpts[t]}")
             end_indices.append(t)
             if add_mode == 1:
                 if dist_i is not None:
@@ -2103,7 +1797,6 @@ def _find_valid_match_points(kpts_search, origin_kpts, search_data, kpts_num, b_
                     kpts_search[dist_i] = np.array([100000, 100000])  # remove the matched point from search
 
     valid_num = np.array(valid_list).sum()
-    print(f"Found {founds}/{len(origin_kpts)} matches in search. true matches: {valid_num}")
     
     if _all:
         kpts_num = len(search_data['mconf_f']) if len(search_data['mconf_f']) < kpts_num else kpts_num
@@ -2113,7 +1806,6 @@ def _find_valid_match_points(kpts_search, origin_kpts, search_data, kpts_num, b_
                 break
             if add_idx not in valid_indices:
                 valid_indices.append(add_idx)
-                #print(f"Adding {add_idx} to valid_indices")
                 valid_list.append('new')
     elif add_mode == 1:
         for add_idx in add_indices:
@@ -2121,10 +1813,7 @@ def _find_valid_match_points(kpts_search, origin_kpts, search_data, kpts_num, b_
                 break
             if add_idx not in valid_indices:
                 valid_indices.append(add_idx)
-                #print(f"Adding {add_idx} to valid_indices")
                 valid_list.append('new')
-            else:
-                print(f"Already in valid_indices: {add_idx}")
     else:
         pass
     if not _all and (add_mode == 0 or add_mode == 1):
@@ -2133,7 +1822,6 @@ def _find_valid_match_points(kpts_search, origin_kpts, search_data, kpts_num, b_
     _kpts1 = search_data['mkpts0_f'][valid_indices].detach().cpu().numpy()
     kpts2 = search_data['mkpts1_f'][valid_indices].detach().cpu().numpy()
     mconf01 = search_data['mconf_f'][valid_indices].cpu().numpy()
-    print(f"conf range: {mconf01.min()} ~ {mconf01.max()}")
 
     if 'scale0' in search_data:
         _kpts1 = _kpts1 / search_data['scale0'][b_id].cpu().numpy()[[1, 0]]
@@ -2185,8 +1873,6 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
                         best_conf = _conf
                         dist_i = cor_idx
         if (dist_i is not None) and (best_dist <= dist_thr):
-            #print(f"Found match in search: {best_kpt} ({kpts1_search_detail_fine_window[cor_idx]} + {kpts1_search_detail_f[cor_idx]} -[2 2] + {kpts1_search_detail_ref[cor_idx]})  →  {kpts1[t]} ({kpts1_detail_fine_window[t]} + {kpts1_detail_f[t]} -[2 2] + {kpts1_detail_ref[t]}) dist: {dist}")
-            #print(f"Found match in search: {origin_kpt}  →  {kpts_search[dist_i]} dist: {best_dist}")
             valid_indices.append(dist_i)
             bind_list.append([len(valid_indices)-1, t-end_number])
             founds += 1
@@ -2202,7 +1888,6 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
             if 'diff_points' in search_data:
                 track_json[track_id]['diff_points'].append([search_data['diff_points']['0'][dist_i].tolist(), search_data['diff_points']['1'][dist_i].tolist()])
         else:
-            #print(f"No match found in search for {origin_kpts[t]}")
             end_indices.append(t-end_number)
             track_json[track_id]['end_id'] = track_json[track_id]['start_id'] + len(track['points']) - 1
             if add_mode == 1:
@@ -2211,7 +1896,6 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
                     kpts_search[dist_i] = np.array([100000, 100000])  # remove the matched point from search
 
     valid_num = np.array(valid_list).sum()
-    print(f"Found {founds}/{t-end_number+1} matches in search. true matches: {valid_num}")
     
     track_id += 1
     if _all:
@@ -2222,7 +1906,6 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
                 break
             if add_idx not in valid_indices:
                 valid_indices.append(add_idx)
-                #print(f"Adding {add_idx} to valid_indices")
                 valid_list.append('new')
                 kpts0_f_window, kpts0_coarse_4, kpts0_subref = search_data['mkpts0_f1_window'].detach().cpu().numpy(), search_data['mkpts0_f1_fine'].detach().cpu().numpy(), search_data['mkpts0_subref'].detach().cpu().numpy()
                 kpts1_f_window, kpts1_coarse_4, kpts1_subref = search_data['mkpts1_f1_window'].detach().cpu().numpy(), search_data['mkpts1_f1_fine'].detach().cpu().numpy(), search_data['mkpts1_subref'].detach().cpu().numpy()
@@ -2241,10 +1924,7 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
                 break
             if add_idx not in valid_indices:
                 valid_indices.append(add_idx)
-                #print(f"Adding {add_idx} to valid_indices")
                 valid_list.append('new')
-            else:
-                print(f"Already in valid_indices: {add_idx}")
     else:
         pass
     if not _all and (add_mode == 0 or add_mode == 1):
@@ -2253,9 +1933,7 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
     _kpts1 = search_data['mkpts0_f'][valid_indices].detach().cpu().numpy()
     kpts2 = search_data['mkpts1_f'][valid_indices].detach().cpu().numpy()
     mconf01 = search_data['mconf_f'][valid_indices].cpu().numpy()
-    if mconf01.size > 0:
-        print(f"conf range: {mconf01.min()} ~ {mconf01.max()}")
-    else:
+    if mconf01.size == 0:
         end_flag = True
 
     if 'scale0' in search_data:
@@ -2271,7 +1949,6 @@ def _find_valid_match_points2(kpts_search, track_json, search_data, kpts_num, b_
 
 def _find_valid_match_points2_fast(kpts_search_np, track_json, search_data, kpts_num, b_id, _all, add_mode,
                                    dist_thr=2*np.sqrt(2), start_id=0, img_num=10, end_flag=False):
-    # 末尾点のみ抽出（end_id==img_num-1 を対象）
     active_ids, origins = [], []
     for tid, tr in track_json.items():
         if tr['end_id'] == img_num - 1:
@@ -2288,24 +1965,19 @@ def _find_valid_match_points2_fast(kpts_search_np, track_json, search_data, kpts
     dists, idxs = tree.query(origins, k=min(K, len(kpts_search)), distance_upper_bound=1e9)  # (M,K)
     if dists.ndim == 1: dists, idxs = dists[:, None], idxs[:, None]
 
-    # 各行（各トラック）で「距離優先しつつ、同距離帯なら conf 最大」を選ぶ
     conf = search_data['mconf_f'].detach().cpu().numpy()  # (Ns,)
     conf_mat = np.where(idxs < len(conf), conf[idxs], -1e9)  # (M,K)
 
-    # まず距離で閾値内のみ可
     valid_mat = dists <= dist_thr
-    # 無効は conf を -inf 相当に
     score = np.where(valid_mat, conf_mat, -1e9)
-    best_j = np.argmax(score, axis=1)             # 各行でベスト列
+    best_j = np.argmax(score, axis=1)
     best_idx = idxs[np.arange(len(origins)), best_j]
     best_dist = dists[np.arange(len(origins)), best_j]
 
-    # 実在 & 閾値内のみ残す
     ok_mask = (best_idx < len(kpts_search)) & (best_dist <= dist_thr)
     chosen_search = best_idx[ok_mask].astype(np.int64)
     chosen_tids   = np.asarray(active_ids, dtype=object)[ok_mask]
 
-    # search側の重複を排除（信頼度高い方を残す）
     if chosen_search.size > 0:
         keep = []
         seen = {}
@@ -2318,7 +1990,6 @@ def _find_valid_match_points2_fast(kpts_search_np, track_json, search_data, kpts
         chosen_tids  = np.array([t for t,_ in keep], dtype=object)
         chosen_search = np.array([s for _,s in keep], dtype=np.int64)
 
-    # track 更新（ベクトルで）
     if chosen_search.size > 0:
         k1 = search_data['mkpts1_f'][chosen_search].detach().cpu().numpy()
         win1 = search_data['mkpts1_f1_window'].detach().cpu().numpy()[chosen_search]
@@ -2335,7 +2006,6 @@ def _find_valid_match_points2_fast(kpts_search_np, track_json, search_data, kpts
                 tr['diff_points'].append([ search_data['diff_points']['0'][si].tolist(),
                                            search_data['diff_points']['1'][si].tolist() ])
 
-    # 終了判定
     not_ok = [i for i, tid in enumerate(active_ids) if tid not in set(chosen_tids)]
     for i in not_ok:
         tid = active_ids[i]
@@ -2344,10 +2014,9 @@ def _find_valid_match_points2_fast(kpts_search_np, track_json, search_data, kpts
 
     text = [f"#Matches {len(origins)} (founds: {len(chosen_tids)}) 0px matches: {(best_dist[ok_mask]<=0).sum()}"]
     end_flag = (len(chosen_tids) == 0)
-    # 返り値（従来APIと同じ形に合わせる）
     _kpts1 = search_data['mkpts0_f'][chosen_search].detach().cpu().numpy() if chosen_search.size else np.zeros((0,2))
     kpts2  = search_data['mkpts1_f'][chosen_search].detach().cpu().numpy() if chosen_search.size else np.zeros((0,2))
-    bind_list = [[i,i] for i in range(len(chosen_search))]  # 必要なら整形
+    bind_list = [[i,i] for i in range(len(chosen_search))]
     valid_list = (best_dist[ok_mask] <= 0).tolist()
     end_indices = not_ok
     return _kpts1, kpts2, bind_list, valid_list, text, end_indices, track_json, end_flag
@@ -2356,7 +2025,6 @@ def _find_valid_match_points2_fast(kpts_search_np, track_json, search_data, kpts
 
 def make_confidence_figure_track_compare(data_01, data_02, data_03, data_04, data_05, data_06, data_07, data_08, data_09,
                                          b_id=0, topk=15000, result_path=None, is_origin_img=True, origin_wh=None, new_wh=None):
-    # 画像読み込み
     img0 = data_01['imagec_0'][b_id]
     img1 = data_01['imagec_1'][b_id]
     img0 = img0 * (imagenet_std[:, None, None].to(img0.device)) + (imagenet_mean[:, None, None].to(img0.device))
@@ -2455,84 +2123,57 @@ def make_confidence_figure_track_compare(data_01, data_02, data_03, data_04, dat
             img9 = _restore_img(img9, data_09['mask1'])
 
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_01['mconf_f']) if len(data_01['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_01['mconf_f'], num, 0).indices
     mconf01 = data_01['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf01.min()} ~ {mconf01.max()}")
     kpts0_1 = data_01['mkpts0_f'][idx].detach().cpu().numpy()
     kpts1 = data_01['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_02['mconf_f']) if len(data_02['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_02['mconf_f'], num, 0).indices
     mconf02 = data_02['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf02.min()} ~ {mconf02.max()}")
     kpts0_2 = data_02['mkpts0_f'][idx].detach().cpu().numpy()
     kpts2 = data_02['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_03['mconf_f']) if len(data_03['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_03['mconf_f'], num, 0).indices
     mconf03 = data_03['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf03.min()} ~ {mconf03.max()}")
     kpts0_3 = data_03['mkpts0_f'][idx].detach().cpu().numpy()
     kpts3 = data_03['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_04['mconf_f']) if len(data_04['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_04['mconf_f'], num, 0).indices
     mconf04 = data_04['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf04.min()} ~ {mconf04.max()}")
     kpts0_4 = data_04['mkpts0_f'][idx].detach().cpu().numpy()
     kpts4 = data_04['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_05['mconf_f']) if len(data_05['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_05['mconf_f'], num, 0).indices
     mconf05 = data_05['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf05.min()} ~ {mconf05.max()}")
     kpts0_5 = data_05['mkpts0_f'][idx].detach().cpu().numpy()
     kpts5 = data_05['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_06['mconf_f']) if len(data_06['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_06['mconf_f'], num, 0).indices
     mconf06 = data_06['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf06.min()} ~ {mconf06.max()}")
     kpts0_6 = data_06['mkpts0_f'][idx].detach().cpu().numpy()
     kpts6 = data_06['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_07['mconf_f']) if len(data_07['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_07['mconf_f'], num, 0).indices
     mconf07 = data_07['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf07.min()} ~ {mconf07.max()}")
     kpts0_7 = data_07['mkpts0_f'][idx].detach().cpu().numpy()
     kpts7 = data_07['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_08['mconf_f']) if len(data_08['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_08['mconf_f'], num, 0).indices
     mconf08 = data_08['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf08.min()} ~ {mconf08.max()}")
     kpts0_8 = data_08['mkpts0_f'][idx].detach().cpu().numpy()
     kpts8 = data_08['mkpts1_f'][idx].detach().cpu().numpy()
 
-    # numの数だけ信頼度の高い順に特徴点を選択
     num = len(data_09['mconf_f']) if len(data_09['mconf_f']) < topk else topk
-    print('kptnum', num)
     idx = torch.topk(data_09['mconf_f'], num, 0).indices
     mconf09 = data_09['mconf_f'][idx].cpu().numpy()
-    print(f"conf range: {mconf09.min()} ~ {mconf09.max()}")
     kpts0_9 = data_09['mkpts0_f'][idx].detach().cpu().numpy()
     kpts9 = data_09['mkpts1_f'][idx].detach().cpu().numpy()
 
@@ -2656,7 +2297,6 @@ def make_confidence_figure_track_compare(data_01, data_02, data_03, data_04, dat
                 track['points'] = np.array(track['points']).tolist()
         with open(result_path, 'w') as f:
             json.dump(track_json, f, indent=2)
-            print(f"Saved track json to {result_path}")
 
 
 def make_matching_figures(data, mode='evaluation', path=None, dpi=150):

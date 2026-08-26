@@ -111,7 +111,6 @@ class GLU_3(nn.Module):
         feat = feat_act * feat_linear
         feat = self.W2(feat)
         return feat
-        # return self.V(feat)
 
 
 class conv_3(nn.Module):

@@ -138,10 +138,8 @@ def estimate_lo_pose(kpts0, kpts1, K0, K1, thresh, conf=0.99999):
     success = M is not None and ( ((M.t != [0., 0., 0.]).all()) or ((M.q != [1., 0., 0., 0.]).all()) )
     if success:
         M = Pose.from_Rt(torch.tensor(M.R), torch.tensor(M.t)) # .to(pts0)
-        # print(M)
     else:
         M = Pose.from_4x4mat(torch.eye(4).numpy()) # .to(pts0)
-        # print(M)
 
     estimation = {
         "success": success,

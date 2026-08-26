@@ -36,9 +36,6 @@ class MatcherWrapper(nn.Module):
         self.matcher = matcher
 
     def forward(self, data):
-        # lightning の self.matcher(data, mode='test') が
-        # (result, flops, runtime) みたいなタプルを返すなら、
-        # 先頭だけ返しておけば OK（thop は中身にはあまり関心がない）
         out = self.matcher(data, mode='test')
         if isinstance(out, (tuple, list)):
             return out[0]
@@ -91,7 +88,7 @@ class PL_JamMa(pl.LightningModule):
         self._flops_matcher = None
         self.warmup = False
         n_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        print('number of params:', n_parameters / 1e6)
+        logger.info(f"Number of trainable parameters: {n_parameters / 1e6:.2f}M")
 
     def configure_optimizers(self):
         # Lightning 1.3 has limited scheduler recovery when resuming checkpoints.
@@ -275,34 +272,27 @@ class PL_JamMa(pl.LightningModule):
         for thr in [5, 10, 20]:
             # log on all ranks for ModelCheckpoint callback to work properly
             self.log(f'auc@{thr}', torch.tensor(np.mean(multi_val_metrics[f'auc@{thr}'])))  # ckpt monitors on this
-        print(val_metrics_4tb)
+        logger.info(pprint.pformat(val_metrics_4tb))
 
     def test_step(self, batch, batch_idx):
         with torch.autocast(enabled=self.config.JAMMA.MP, device_type='cuda'):
             det_eval = True
             device = 'cuda'
             if det_eval:
-                print('pre_inference')
                 img0_path = "data/megadepth/" + batch['pair_names'][0][0]
                 with Image.open(img0_path) as im:
                     w, h = im.size
 
-                    # 画像をコピーして編集
                     new_im = im.copy()
                     draw = ImageDraw.Draw(new_im)
 
-                    margin = 8  # 黒枠の幅
+                    margin = 8
 
-                    # 上
                     draw.rectangle([0, 0, w, margin], fill=(0, 0, 0))
-                    # 下
                     draw.rectangle([0, h - margin, w, h], fill=(0, 0, 0))
-                    # 左
                     draw.rectangle([0, 0, margin, h], fill=(0, 0, 0))
-                    # 右
                     draw.rectangle([w - margin, 0, w, h], fill=(0, 0, 0))
 
-                    # 一時ファイルに保存
                     tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
                     new_im.save(tmp.name)
 
@@ -332,14 +322,11 @@ class PL_JamMa(pl.LightningModule):
                 batch['custom_fine_thr'] = 0.1
                 batch['custom_fine_flex_thr'] = 0.1
 
-            print('real_inference')
             self.start_event.record()
             with self.profiler.profile("Backbone"):
                 flops1, _ = profile(self.backbone, inputs=(batch,), verbose=False)
-                #self.backbone(batch)
 
             with self.profiler.profile("Matcher"):
-                #self.matcher(batch, mode='test')
                 flops2, _ = profile(self.matcher, inputs=(batch,), verbose=False)
             self.end_event.record()
             total_flops = flops1 + flops2
@@ -351,10 +338,6 @@ class PL_JamMa(pl.LightningModule):
         ret_dict, rel_pair_names = self._compute_metrics(batch)
 
         # Visualization #
-        # path = str(self.viz_path) + '/' + str(batch_idx)
-        # make_matching_figures(batch, 'confidence', path=path+'_confidence.png')
-        # make_matching_figures(batch, 'evaluation', path=path+'_evaluation.png')
-        # make_matching_figures(batch, 'wheel', path=path+'_wheel.png')
 
         with self.profiler.profile("dump_results"):
             if self.dump_dir is not None:
@@ -390,68 +373,51 @@ class PL_JamMa(pl.LightningModule):
             logger.info(f'Prediction and evaluation results will be saved to: {self.dump_dir}')
 
         if self.trainer.global_rank == 0:
-            print(self.profiler.summary())
+            logger.info(self.profiler.summary())
             val_metrics_4tb = aggregate_metrics_test(metrics, self.config.TRAINER.EPI_ERR_THR, config=self.config)
             logger.info('\n' + pprint.pformat(val_metrics_4tb))
-            print('Averaged Matching time over 1500 pairs: {:.2f} ms'.format(self.total_ms / 1500))
-            print('Averaged FLOPs per pair: {:.2f} GMac'.format(self.total_flops / 1500 / 1e9))
+            logger.info('Averaged matching time over 1500 pairs: {:.2f} ms'.format(self.total_ms / 1500))
+            logger.info('Averaged FLOPs per pair: {:.2f} GMac'.format(self.total_flops / 1500 / 1e9))
             if self.dump_dir is not None:
                 np.save(Path(self.dump_dir) / 'JAMMA_pred_eval', dumps)
 
-    # def test_step(self, batch, batch_idx):
-    #     flops1, params1 = profile(self.backbone, inputs=[batch])
-    #     flops2, params2 = profile(self.matcher, inputs=[batch])
-    #     return flops1+flops2
-    #
-    # def test_epoch_end(self, outputs):
-    #     flops_mean = sum(outputs)/len(outputs) / 1e9
-    #     print("mean flops: {}G".format(flops_mean))
-
-        
     def _calc_flops_once(self, data):
-        """入力サイズが同じ前提なら1回だけ FLOPs を計算してキャッシュ"""
 
         self.backbone.eval()
-        # matcher も eval にしておく（必要なら）
         if hasattr(self.matcher, "eval"):
             self.matcher.eval()
 
         with torch.no_grad():
-            # backbone の FLOPs
             flops_b, _ = profile(self.backbone, inputs=(data,), verbose=False)
 
-            # matcher 用のラッパーモジュール
             wrapped = MatcherWrapper(self.matcher)
-            wrapped.eval()  # 一応
+            wrapped.eval()
 
             flops_m, _ = profile(wrapped, inputs=(data,), verbose=False)
 
         self._flops_backbone = flops_b
         self._flops_matcher = flops_m
-        print(f"[FLOPs] backbone: {flops_b:,}, matcher: {flops_m:,}")
+        logger.info(f"[FLOPs] backbone: {flops_b:,}, matcher: {flops_m:,}")
 
 
     def forward(self, data):
         self._calc_flops_once(data)
         if not self.warmup:
-            print("Warming up...")
+            logger.info("Warming up...")
             # warm-up
             for _ in range(30):
                 self.backbone(data)
                 self.matcher(data, mode='test')
             self.warmup = True
-            print("Warm-up done.")
+            logger.info("Warm-up done.")
         self.start_event.record()
         with self.profiler.profile("Backbone"):
-            #flops1, _ = profile(self.backbone, inputs=(data,), verbose=False)
             self.backbone(data)
                 
 
         with self.profiler.profile("Matcher"):
-            #flops2, _ = profile(self.matcher, inputs=(data,), verbose=False)
             self.matcher(data, mode='test')
         self.end_event.record()
-        #total_flops = flops1 + flops2
         total_flops = self._flops_backbone + self._flops_matcher
         torch.cuda.synchronize()
         run_time = self.start_event.elapsed_time(self.end_event)

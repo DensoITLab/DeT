@@ -126,7 +126,6 @@ def distort_points(pts, dist):
             p21 = p12.flip(-1)
             uv = torch.prod(pts, -1, keepdim=True)
             undist = undist + 2 * p12 * uv + p21 * (r2 + 2 * pts**2)
-            # TODO: handle tangential boundaries
 
     return undist, valid
 

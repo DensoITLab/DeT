@@ -25,8 +25,6 @@ DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
 from src.config.default import get_cfg_defaults
 from src.jamma.backbone import CovNextV2_nano
 from src.jamma.jamma import JamMa
-from src.utils.dataset import read_megadepth_color
-from src.utils.misc import lower_config
 
 
 class DeTMatcher(torch.nn.Module):
@@ -57,6 +55,59 @@ def resolve_input_path(path_like) -> Path:
     if path.is_absolute() or path.exists():
         return path
     return PROJECT_ROOT / path
+
+
+def lower_config(yacs_cfg):
+    if not hasattr(yacs_cfg, "items"):
+        return yacs_cfg
+    return {key.lower(): lower_config(value) for key, value in yacs_cfg.items()}
+
+
+def get_resized_wh(width: int, height: int, resize: Optional[int]):
+    if resize is None:
+        return width, height
+    scale = resize / max(width, height)
+    return int(round(width * scale)), int(round(height * scale))
+
+
+def get_divisible_wh(width: int, height: int, divisor: Optional[int]):
+    if divisor is None:
+        return width, height
+    return int(width // divisor * divisor), int(height // divisor * divisor)
+
+
+def pad_bottom_right(image: np.ndarray, pad_size: int):
+    padded = np.zeros((image.shape[0], pad_size, pad_size), dtype=image.dtype)
+    padded[:, :image.shape[1], :image.shape[2]] = image
+
+    mask = np.zeros((pad_size, pad_size), dtype=bool)
+    mask[:image.shape[1], :image.shape[2]] = True
+    return padded, mask
+
+
+def read_color(path: Path, resize: Optional[int], divisor: int, padding: bool):
+    image = Image.open(path).convert("RGB")
+    width, height = image.width, image.height
+    new_width, new_height = get_resized_wh(width, height, resize)
+    new_width, new_height = get_divisible_wh(new_width, new_height, divisor)
+
+    scale = torch.tensor([width / new_width, height / new_height], dtype=torch.float)
+    image = image.resize((new_width, new_height), Image.BICUBIC)
+    image_np = np.asarray(image, dtype=np.float32).transpose(2, 0, 1) / 255.0
+
+    mean = np.asarray([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)
+    std = np.asarray([0.229, 0.224, 0.225], dtype=np.float32).reshape(3, 1, 1)
+    image_np = (image_np - mean) / std
+
+    if padding:
+        image_np, mask_np = pad_bottom_right(image_np, max(new_height, new_width))
+        mask = torch.from_numpy(mask_np)
+    else:
+        mask = None
+
+    image_tensor = torch.from_numpy(image_np).float()[None]
+    prepad_size = torch.tensor([new_height, new_width])
+    return image_tensor, scale, mask, prepad_size
 
 
 def parse_args():
@@ -119,8 +170,8 @@ def build_config(args) -> dict:
 
 
 def load_pair_data(path0: Path, path1: Path, image_id0: int, image_id1: int, args, device):
-    image0, scale0, mask0, prepad0, *_ = read_megadepth_color(str(path0), args.resize, 8, True)
-    image1, scale1, mask1, prepad1, *_ = read_megadepth_color(str(path1), args.resize, 8, True)
+    image0, scale0, mask0, prepad0 = read_color(path0, args.resize, 8, True)
+    image1, scale1, mask1, prepad1 = read_color(path1, args.resize, 8, True)
 
     mask0 = F.interpolate(mask0[None, None].float(), scale_factor=0.125, mode="nearest")[0].bool()
     mask1 = F.interpolate(mask1[None, None].float(), scale_factor=0.125, mode="nearest")[0].bool()

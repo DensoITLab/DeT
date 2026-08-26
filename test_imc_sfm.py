@@ -1,32 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Online SfM evaluation on IMC-like 5-image bags using sequential pair matches (0-1,1-2,2-3,3-4).
-
-Metrics (per bag):
-- Bootstrap success (E + recoverPose + triangulate from 0-1)
-- PnP stability (success, inliers, median reproj) for k=2..N-1
-- Map growth (#3D points after each step, #new triangulated)
-- Final pose closeness to GT (0->N rot / t-dir error)
-- RPE (edge k-1->k rot / t-dir error)
-- Drift rate (deg/m) using GT path length (scale-safe)
-- Tracking continuity (longest consecutive success streak, success rates)
-- Runtime (matcher runtime sum/avg, SfM runtime breakdown)
-- FLOPs (matcher FLOPs sum/avg; SfM FLOPs not computed)
-
-Added metrics (global over all bags):
-- AUC@K° (IMC/LoFTR-style): AUC of recall(error) from 0..K normalized by K
-  where error = max(rotation_error_deg, translation_direction_error_deg)
-  * "Multiview-like": final 0->N error per bag (FAILURES INCLUDED)
-  * "Stereo-like": RPE edge error across all edges (FAILURES INCLUDED)
-  * "Online-like": prefix 0->k error across all k in all bags (FAILURES INCLUDED)
-- mAcc@K° (fraction under K; FAILURES INCLUDED)
-
-IMPORTANT CHANGE (vs previous version):
-- AUC/mAcc now INCLUDE failures (bootstrap failure, invalid poses/edges) as large errors.
-  This avoids "only-valid" bias and better matches online tracking evaluation.
-"""
+"""Online SfM evaluation for NN-JamMa and DeT/JamMa on 5-image bags."""
 
 import argparse
 import dataclasses
@@ -48,7 +23,44 @@ from src.lightning.lightning_jamma import PL_JamMa
 from src.utils.profiler import build_profiler
 
 
-# FLOPs
+DEFAULT_ROOT = Path("data/imc")
+DEFAULT_SCENE = "st_peters_square"
+DEFAULT_SET = "set_100"
+DEFAULT_SUBSET_DIR = DEFAULT_ROOT / DEFAULT_SCENE / DEFAULT_SET / "sub_set"
+DEFAULT_DATASET_ROOT = DEFAULT_ROOT / DEFAULT_SCENE / DEFAULT_SET
+DEFAULT_CALIB_DIR = DEFAULT_ROOT / DEFAULT_SCENE / DEFAULT_SET / "calibration"
+
+
+def parse_args():
+    ap = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    ap.add_argument("--subset_dir", type=Path, default=DEFAULT_SUBSET_DIR,
+                    help="Contains Nbag_*.txt files, for example 5bag_015.txt")
+    ap.add_argument("--dataset_root", type=Path, default=DEFAULT_DATASET_ROOT,
+                    help="Root prepended to image paths in bag files")
+    ap.add_argument("--calib_dir", type=Path, default=DEFAULT_CALIB_DIR,
+                    help="Directory with calibration_<stem>.h5 files")
+    ap.add_argument("--data_cfg_path", type=str, default="configs/data/imc.py")
+    ap.add_argument("--main_cfg_path", type=str, default="configs/jamma/outdoor/test.py")
+    ap.add_argument("--profiler_name", type=str, default="inference")
+    ap.add_argument("--dataset_name", type=str, default="imc",
+                    help="Dataset label stored in output files")
+    ap.add_argument("--scene_name", type=str, default=DEFAULT_SCENE,
+                    help="Scene label stored in output files")
+    ap.add_argument("--bag_size", type=int, default=5)
+    ap.add_argument("--flip_w2c", action="store_true")
+    ap.add_argument("--topk", type=int, default=20000)
+    ap.add_argument("--method", type=str, default="nn-jamma", choices=["nn-jamma", "det-jamma"])
+    ap.add_argument("--ransac_mode", type=str, default="lo-ransac", choices=["ransac", "lo-ransac"])
+    ap.add_argument("--out_json", type=Path, default=None)
+    ap.add_argument("--device", type=str, default="cuda")
+    ap.add_argument("--pnp_reproj_thr", type=float, default=4.0)
+    ap.add_argument("--min_pnp_points", type=int, default=30)
+    ap.add_argument("--tri_max_reproj", type=float, default=4.0)
+    ap.add_argument("--min_depth_z", type=float, default=1e-6)
+    ap.add_argument("--jamma_ckpt", type=str, default="official")
+    ap.add_argument("--auc_thresholds", type=float, nargs="+", default=[5.0, 10.0],
+                    help="AUC/mAcc thresholds in degrees")
+    return ap.parse_args()
 
 
 # ============================================================
@@ -88,7 +100,6 @@ def load_cam_from_dir(calib_dir: Path, img_path: Path, flip_w2c: bool) -> Camera
     h5_path = calib_dir / f"calibration_{img_path.stem}.h5"
     K, R, t = _read_cam_from_h5(h5_path)
     if flip_w2c:
-        # if the file stores c2w, flip to w2c
         R, t = R.T, -R.T @ t
     return CameraParams(K, R, t)
 
@@ -143,7 +154,6 @@ def _norm(t: np.ndarray) -> float:
 # ============================================================
 
 def _pose_max_error_deg(R_err_deg: float, t_dir_err_deg: float) -> float:
-    """IMC系の error 定義でよく使う: max(rot_err, trans_dir_err)"""
     return float(max(float(R_err_deg), float(t_dir_err_deg)))
 
 
@@ -1243,60 +1253,6 @@ def main():
         args.out_json.parent.mkdir(parents=True, exist_ok=True)
         args.out_json.write_text(json.dumps(payload, indent=2, default=_json_default))
         print(f"\nSaved: {args.out_json}")
-
-
-use_dataset = 'IMC'
-
-if use_dataset == 'IMC':
-    default_root = Path('data/imc')
-    scene = 'st_peters_square'
-    set_name = 'set_100'
-    subset_dir = default_root / scene / set_name / 'sub_set'
-    dataset_root = default_root / scene / set_name
-    calib_dir = default_root / scene / set_name / 'calibration'
-else:
-    default_root = Path('data/megadepth/Undistorted_SfM')
-    scene = '0015'
-    subset_dir = default_root / scene / '5bag'
-    dataset_root = Path('data/megadepth')
-    calib_dir = default_root / scene / 'calibration'
-def parse_args():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--subset_dir', type=Path, default=subset_dir,
-                    help='Contains Nbag_*.txt files (e.g., 5bag_015.txt)')
-    ap.add_argument('--dataset_root', type=Path, default=dataset_root,
-                    help='Root to prepend to image relative paths in bag files')
-    ap.add_argument('--calib_dir', type=Path, default=calib_dir,
-                    help='Directory with calibration_<stem>.h5 per image')
-    ap.add_argument('--data_cfg_path', type=str, default="configs/data/megadepth_test_1500.py")
-    ap.add_argument('--main_cfg_path', type=str, default="configs/jamma/outdoor/test.py")
-    ap.add_argument('--profiler_name', type=str, default="inference")
-    ap.add_argument("--dataset_name", type=str,
-                    default="phototourism" if use_dataset == "IMC" else "megadepth",
-                    help="Dataset label stored in output files")
-    ap.add_argument("--scene_name", type=str, default=scene,
-                    help="Scene label stored in output files")
-
-    ap.add_argument("--bag_size", type=int, default=5)
-    ap.add_argument("--flip_w2c", action="store_true")
-    ap.add_argument("--topk", type=int, default=20000)
-    ap.add_argument("--method", type=str, default="nn-jamma", choices=["nn-jamma", "det-jamma"])
-    ap.add_argument("--ransac_mode", type=str, default="lo-ransac", choices=["ransac", "lo-ransac"])
-    ap.add_argument("--out_json", type=Path, default=None)
-
-    ap.add_argument("--device", type=str, default="cuda")
-
-    ap.add_argument("--pnp_reproj_thr", type=float, default=4.0)
-    ap.add_argument("--min_pnp_points", type=int, default=30)
-    ap.add_argument("--tri_max_reproj", type=float, default=4.0)
-    ap.add_argument("--min_depth_z", type=float, default=1e-6)
-
-    ap.add_argument("--jamma_ckpt", type=str, default="official")
-
-    ap.add_argument("--auc_thresholds", type=float, nargs="+", default=[5.0, 10.0],
-                    help="AUC/mAcc thresholds in degrees, e.g. --auc_thresholds 5 10 20")
-
-    return ap.parse_args()
 
 
 if __name__ == "__main__":

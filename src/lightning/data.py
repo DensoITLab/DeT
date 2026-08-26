@@ -112,16 +112,6 @@ class MultiSceneDataModule(pl.LightningDataModule):
 
         assert stage in ['fit', 'test'], "stage must be either fit or test"
 
-        """
-        try:
-            self.world_size = dist.get_world_size()
-            self.rank = dist.get_rank()
-            logger.info(f"[rank:{self.rank}] world_size: {self.world_size}")
-        except AssertionError as ae:
-            self.world_size = 1
-            self.rank = 0
-            logger.warning(str(ae) + " (set wolrd_size=1 and rank=0)")
-        """
         
         if dist.is_available() and dist.is_initialized():
             self.world_size = dist.get_world_size()
@@ -273,7 +263,6 @@ class MultiSceneDataModule(pl.LightningDataModule):
                         pose_dir=pose_dir))(name)
                     for name in npz_names)
             elif data_source == 'MegaDepth':
-                # TODO: _pickle.PicklingError: Could not pickle the task to send it to the workers.
                 raise NotImplementedError()
                 datasets = Parallel(n_jobs=math.floor(len(os.sched_getaffinity(0)) * 0.9 / comm.get_local_size()))(
                     delayed(lambda x: _build_dataset(
@@ -320,12 +309,6 @@ class MultiSceneDataModule(pl.LightningDataModule):
                 dataloaders.append(DataLoader(dataset, sampler=sampler, **self.val_loader_params))
             return dataloaders
 
-    """
-    def test_dataloader(self, *args, **kwargs):
-        logger.info(f'[rank:{self.rank}/{self.world_size}]: Test Sampler and DataLoader re-init.')
-        sampler = DistributedSampler(self.test_dataset, shuffle=False)
-        return DataLoader(self.test_dataset, sampler=sampler, **self.test_loader_params)
-    """
     
     def test_dataloader(self):
         """
@@ -341,7 +324,7 @@ class MultiSceneDataModule(pl.LightningDataModule):
         dataloader = DataLoader(
             self.test_dataset,
             sampler=sampler,
-            **self.test_loader_params  # ✅ ← JamMa標準方式に戻す
+            **self.test_loader_params
         )
         return dataloader
 
