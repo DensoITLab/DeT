@@ -130,7 +130,7 @@ def parse_args():
     parser.add_argument("--det_fine_thr", type=float, default=0.0)
     parser.add_argument("--search_radius", type=float, default=None)
     parser.add_argument("--max_viz_tracks", type=int, default=90)
-    parser.add_argument("--viz_height", type=int, default=360)
+    parser.add_argument("--viz_height", type=int, default=720)
     parser.add_argument("--line_width", type=int, default=1)
     parser.add_argument("--line_alpha", type=int, default=120)
     parser.add_argument("--track_spacing", type=float, default=10.0)
