@@ -68,7 +68,7 @@ python demo/demo_det.py \
   --ckpt_path /path/to/det.ckpt
 ```
 
-The demo writes `tracks.json` and `comparison.png` under the output directory. The comparison figure shows NN-JamMa on top and DeT-JamMa on the bottom.
+The demo writes `tracks.json` and `comparison.png` under the output directory. The comparison figure shows NN-JamMa on top and DeT-JamMa on the bottom, using the same sampled start tracks from the shared 0-1 matches.
 Use `--viz_height`, `--label_font_size`, and `--max_viz_tracks` to adjust the comparison figure.
 
 ## Paper Evaluation

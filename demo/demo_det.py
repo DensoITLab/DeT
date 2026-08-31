@@ -315,27 +315,45 @@ def color_for(index: int):
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def select_tracks(tracks: List[Dict], max_tracks: int, min_spacing: float) -> List[Tuple[int, Dict]]:
+def starts_from_first_pair(track: Dict) -> bool:
+    return len(track["frames"]) >= 2 and track["frames"][0] == 0 and track["frames"][1] == 1
+
+
+def select_common_start_track_ids(
+    nn_tracks: List[Dict],
+    det_tracks: List[Dict],
+    common_start_count: int,
+    max_tracks: int,
+    min_spacing: float,
+) -> List[int]:
+    candidates = []
+    count = min(common_start_count, len(nn_tracks), len(det_tracks))
+    for track_id in range(count):
+        nn_track = nn_tracks[track_id]
+        det_track = det_tracks[track_id]
+        if not starts_from_first_pair(nn_track) or not starts_from_first_pair(det_track):
+            continue
+        nn_conf = float(np.mean(nn_track["confidences"])) if nn_track["confidences"] else 0.0
+        det_conf = float(np.mean(det_track["confidences"])) if det_track["confidences"] else 0.0
+        candidates.append((track_id, len(nn_track["frames"]) + len(det_track["frames"]), nn_conf + det_conf))
+
     ranked = sorted(
-        enumerate(tracks),
+        candidates,
         key=lambda item: (
-            len(item[1]["frames"]),
-            float(np.mean(item[1]["confidences"])) if item[1]["confidences"] else 0.0,
+            item[1],
+            item[2],
         ),
         reverse=True,
     )
 
-    selected: List[Tuple[int, Dict]] = []
-    anchors: List[Tuple[int, np.ndarray]] = []
-    for track_id, track in ranked:
-        if len(track["frames"]) < 2:
+    selected: List[int] = []
+    anchors: List[np.ndarray] = []
+    for track_id, _, _ in ranked:
+        point = np.asarray(nn_tracks[track_id]["points"][0], dtype=np.float32)
+        if any(np.linalg.norm(point - prev_point) < min_spacing for prev_point in anchors):
             continue
-        frame = int(track["frames"][0])
-        point = np.asarray(track["points"][0], dtype=np.float32)
-        if any(prev_frame == frame and np.linalg.norm(point - prev_point) < min_spacing for prev_frame, prev_point in anchors):
-            continue
-        selected.append((track_id, track))
-        anchors.append((frame, point))
+        selected.append(track_id)
+        anchors.append(point)
         if len(selected) >= max_tracks:
             break
 
@@ -356,11 +374,11 @@ def build_row(
     tracks: List[Dict],
     label: str,
     label_fill: Tuple[int, int, int],
+    selected_track_ids: List[int],
     max_tracks: int,
     viz_height: int,
     line_width: int,
     line_alpha: int,
-    track_spacing: float,
     label_font_size: int,
 ) -> Image.Image:
     images = [Image.open(path).convert("RGB") for path in image_paths]
@@ -385,7 +403,10 @@ def build_row(
 
     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    for draw_idx, (_, track) in enumerate(select_tracks(tracks, max_tracks, track_spacing)):
+    for draw_idx, track_id in enumerate(selected_track_ids[:max_tracks]):
+        if track_id >= len(tracks):
+            continue
+        track = tracks[track_id]
         points = []
         for frame, point in zip(track["frames"], track["points"]):
             sx, sy = scales[frame]
@@ -411,6 +432,7 @@ def draw_comparison(
     image_paths: List[Path],
     nn_tracks: List[Dict],
     det_tracks: List[Dict],
+    common_start_count: int,
     out_path: Path,
     max_tracks: int,
     viz_height: int,
@@ -418,14 +440,21 @@ def draw_comparison(
     line_alpha: int,
     track_spacing: float,
     label_font_size: int,
-):
+) -> List[int]:
+    selected_track_ids = select_common_start_track_ids(
+        nn_tracks,
+        det_tracks,
+        common_start_count,
+        max_tracks,
+        track_spacing,
+    )
     nn_row = build_row(
-        image_paths, nn_tracks, "NN-JamMa", (255, 255, 255),
-        max_tracks, viz_height, line_width, line_alpha, track_spacing, label_font_size
+        image_paths, nn_tracks, "NN-JamMa", (255, 255, 255), selected_track_ids,
+        max_tracks, viz_height, line_width, line_alpha, label_font_size
     )
     det_row = build_row(
-        image_paths, det_tracks, "DeT-JamMa", (255, 205, 0),
-        max_tracks, viz_height, line_width, line_alpha, track_spacing, label_font_size
+        image_paths, det_tracks, "DeT-JamMa", (255, 205, 0), selected_track_ids,
+        max_tracks, viz_height, line_width, line_alpha, label_font_size
     )
 
     gap = max(10, int(viz_height * 0.08))
@@ -436,6 +465,7 @@ def draw_comparison(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out_path)
+    return selected_track_ids
 
 
 def main():
@@ -460,8 +490,31 @@ def main():
     det_pair_results = run_sequence(det_model, image_paths, args, device, use_det=True, label="DeT-JamMa")
     det_tracks = build_tracks(det_pair_results, args.link_radius)
 
+    common_start_count = 0
+    if nn_pair_results and det_pair_results:
+        common_start_count = min(len(nn_pair_results[0]["mkpts0"]), len(det_pair_results[0]["mkpts0"]))
+
+    comparison_path = args.output_dir / "comparison.png"
+    selected_track_ids = draw_comparison(
+        image_paths,
+        nn_tracks,
+        det_tracks,
+        common_start_count,
+        comparison_path,
+        args.max_viz_tracks,
+        args.viz_height,
+        args.line_width,
+        args.line_alpha,
+        args.track_spacing,
+        args.label_font_size,
+    )
+
     payload = {
         "images": [str(path) for path in image_paths],
+        "visualization": {
+            "common_start_count": common_start_count,
+            "selected_track_ids": selected_track_ids,
+        },
         "methods": {
             "nn-jamma": {
                 "num_pairs": len(nn_pair_results),
@@ -488,23 +541,13 @@ def main():
 
     json_path = args.output_dir / "tracks.json"
     json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    comparison_path = args.output_dir / "comparison.png"
-    draw_comparison(
-        image_paths,
-        nn_tracks,
-        det_tracks,
-        comparison_path,
-        args.max_viz_tracks,
-        args.viz_height,
-        args.line_width,
-        args.line_alpha,
-        args.track_spacing,
-        args.label_font_size,
-    )
 
     logger.info(f"Saved: {json_path}")
     logger.info(f"Saved: {comparison_path}")
-    logger.info(f"tracks: nn-jamma={len(nn_tracks)}, det-jamma={len(det_tracks)}")
+    logger.info(
+        f"tracks: nn-jamma={len(nn_tracks)}, det-jamma={len(det_tracks)}, "
+        f"visualized_common_starts={len(selected_track_ids)}"
+    )
 
 
 if __name__ == "__main__":
