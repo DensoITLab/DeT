@@ -130,10 +130,11 @@ def parse_args():
     parser.add_argument("--det_fine_thr", type=float, default=0.0)
     parser.add_argument("--search_radius", type=float, default=None)
     parser.add_argument("--max_viz_tracks", type=int, default=90)
-    parser.add_argument("--viz_height", type=int, default=180)
+    parser.add_argument("--viz_height", type=int, default=360)
     parser.add_argument("--line_width", type=int, default=1)
     parser.add_argument("--line_alpha", type=int, default=120)
     parser.add_argument("--track_spacing", type=float, default=10.0)
+    parser.add_argument("--label_font_size", type=int, default=28)
     parser.add_argument("--device", type=str, default="cuda")
     return parser.parse_args()
 
@@ -360,6 +361,7 @@ def build_row(
     line_width: int,
     line_alpha: int,
     track_spacing: float,
+    label_font_size: int,
 ) -> Image.Image:
     images = [Image.open(path).convert("RGB") for path in image_paths]
     scaled = []
@@ -368,7 +370,7 @@ def build_row(
     for image in images:
         scale = viz_height / image.height
         size = (max(1, int(round(image.width * scale))), viz_height)
-        scaled.append(image.resize(size, Image.BICUBIC))
+        scaled.append(image.resize(size, Image.Resampling.LANCZOS))
         scales.append((scale, scale))
 
     offsets = []
@@ -395,10 +397,10 @@ def build_row(
 
     canvas = Image.alpha_composite(canvas, overlay)
     label_draw = ImageDraw.Draw(canvas)
-    font = load_label_font(max(18, int(viz_height * 0.18)))
+    font = load_label_font(max(12, label_font_size))
     bbox = label_draw.textbbox((0, 0), label, font=font)
-    pad_x = max(8, int(viz_height * 0.04))
-    pad_y = max(4, int(viz_height * 0.02))
+    pad_x = max(6, int(label_font_size * 0.25))
+    pad_y = max(3, int(label_font_size * 0.15))
     rect = (0, 0, bbox[2] - bbox[0] + pad_x * 2, bbox[3] - bbox[1] + pad_y * 2)
     label_draw.rectangle(rect, fill=(*label_fill, 245))
     label_draw.text((pad_x, pad_y), label, fill=(0, 0, 0, 255), font=font)
@@ -415,14 +417,15 @@ def draw_comparison(
     line_width: int,
     line_alpha: int,
     track_spacing: float,
+    label_font_size: int,
 ):
     nn_row = build_row(
         image_paths, nn_tracks, "NN-JamMa", (255, 255, 255),
-        max_tracks, viz_height, line_width, line_alpha, track_spacing
+        max_tracks, viz_height, line_width, line_alpha, track_spacing, label_font_size
     )
     det_row = build_row(
         image_paths, det_tracks, "DeT-JamMa", (255, 205, 0),
-        max_tracks, viz_height, line_width, line_alpha, track_spacing
+        max_tracks, viz_height, line_width, line_alpha, track_spacing, label_font_size
     )
 
     gap = max(10, int(viz_height * 0.08))
@@ -496,6 +499,7 @@ def main():
         args.line_width,
         args.line_alpha,
         args.track_spacing,
+        args.label_font_size,
     )
 
     logger.info(f"Saved: {json_path}")

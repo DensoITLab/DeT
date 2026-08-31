@@ -69,6 +69,7 @@ python demo/demo_det.py \
 ```
 
 The demo writes `tracks.json` and `comparison.png` under the output directory. The comparison figure shows NN-JamMa on top and DeT-JamMa on the bottom.
+Use `--viz_height`, `--label_font_size`, and `--max_viz_tracks` to adjust the comparison figure.
 
 ## Paper Evaluation
 
