@@ -5,10 +5,10 @@ import json
 import math
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import torch
 import torch.nn.functional as F
 from loguru import logger
@@ -16,9 +16,8 @@ from loguru import logger
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 DEFAULT_IMAGE_PATHS = [
-    PROJECT_ROOT / "demo" / "aseets" / "sample1.jpg",
-    PROJECT_ROOT / "demo" / "aseets" / "sample2.jpg",
-    PROJECT_ROOT / "demo" / "aseets" / "sample3.jpg",
+    PROJECT_ROOT / "demo" / "images" / f"image{i}.jpg"
+    for i in range(1, 6)
 ]
 DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
 
@@ -27,7 +26,7 @@ from src.jamma.backbone import CovNextV2_nano
 from src.jamma.jamma import JamMa
 
 
-class DeTMatcher(torch.nn.Module):
+class JamMaDemoMatcher(torch.nn.Module):
     def __init__(self, jamma_config: dict, ckpt_path: str):
         super().__init__()
         self.backbone = CovNextV2_nano()
@@ -119,7 +118,7 @@ def parse_args():
         "--images",
         nargs="+",
         default=None,
-        help="Ordered image paths. Defaults to demo/aseets/sample1.jpg sample2.jpg sample3.jpg.",
+        help="Ordered image paths. Defaults to demo/images/image1.jpg ... image5.jpg.",
     )
     parser.add_argument("--image_dir", type=Path, default=None, help="Directory with ordered images.")
     parser.add_argument("--pattern", type=str, default="*.jpg", help="Glob pattern used with --image_dir.")
@@ -130,8 +129,11 @@ def parse_args():
     parser.add_argument("--link_radius", type=float, default=5.0, help="Pixel threshold for linking tracks.")
     parser.add_argument("--det_fine_thr", type=float, default=0.0)
     parser.add_argument("--search_radius", type=float, default=None)
-    parser.add_argument("--max_viz_tracks", type=int, default=300)
-    parser.add_argument("--viz_height", type=int, default=480)
+    parser.add_argument("--max_viz_tracks", type=int, default=90)
+    parser.add_argument("--viz_height", type=int, default=180)
+    parser.add_argument("--line_width", type=int, default=1)
+    parser.add_argument("--line_alpha", type=int, default=120)
+    parser.add_argument("--track_spacing", type=float, default=10.0)
     parser.add_argument("--device", type=str, default="cuda")
     return parser.parse_args()
 
@@ -155,12 +157,12 @@ def collect_images(args) -> List[Path]:
     return images
 
 
-def build_config(args) -> dict:
+def build_config(args, use_det: bool) -> dict:
     config = get_cfg_defaults()
     config.merge_from_file(args.main_cfg_path)
     config.JAMMA.MATCH_COARSE.INFERENCE = True
     config.JAMMA.FINE.INFERENCE = True
-    config.JAMMA.DET.USE_DET = True
+    config.JAMMA.DET.USE_DET = use_det
     config.JAMMA.DET.FINE_THR = args.det_fine_thr
     config.JAMMA.DET.SEARCH_RADIUS = (
         args.search_radius if args.search_radius is not None else args.resize * math.sqrt(2)
@@ -215,16 +217,16 @@ def keep_prev_data(data: dict) -> dict:
     return prev
 
 
-def run_sequence(model: DeTMatcher, image_paths: List[Path], args, device):
+def run_sequence(model: JamMaDemoMatcher, image_paths: List[Path], args, device, use_det: bool, label: str):
     prev_data: Optional[dict] = None
     pair_results = []
 
     for idx in range(len(image_paths) - 1):
         data = load_pair_data(image_paths[idx], image_paths[idx + 1], idx, idx + 1, args, device)
-        if prev_data is not None:
+        if use_det and prev_data is not None:
             data["prev_data"] = prev_data
 
-        logger.info(f"DeT matching: {image_paths[idx]} -> {image_paths[idx + 1]}")
+        logger.info(f"{label}: {image_paths[idx]} -> {image_paths[idx + 1]}")
         with torch.no_grad():
             model(data)
 
@@ -237,7 +239,8 @@ def run_sequence(model: DeTMatcher, image_paths: List[Path], args, device):
                 "confidence": tensor_to_numpy(data["mconf_f"]),
             }
         )
-        prev_data = keep_prev_data(data)
+        if use_det:
+            prev_data = keep_prev_data(data)
 
     return pair_results
 
@@ -311,7 +314,53 @@ def color_for(index: int):
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def draw_tracks(image_paths: List[Path], tracks: List[Dict], out_path: Path, max_tracks: int, viz_height: int):
+def select_tracks(tracks: List[Dict], max_tracks: int, min_spacing: float) -> List[Tuple[int, Dict]]:
+    ranked = sorted(
+        enumerate(tracks),
+        key=lambda item: (
+            len(item[1]["frames"]),
+            float(np.mean(item[1]["confidences"])) if item[1]["confidences"] else 0.0,
+        ),
+        reverse=True,
+    )
+
+    selected: List[Tuple[int, Dict]] = []
+    anchors: List[Tuple[int, np.ndarray]] = []
+    for track_id, track in ranked:
+        if len(track["frames"]) < 2:
+            continue
+        frame = int(track["frames"][0])
+        point = np.asarray(track["points"][0], dtype=np.float32)
+        if any(prev_frame == frame and np.linalg.norm(point - prev_point) < min_spacing for prev_frame, prev_point in anchors):
+            continue
+        selected.append((track_id, track))
+        anchors.append((frame, point))
+        if len(selected) >= max_tracks:
+            break
+
+    return selected
+
+
+def load_label_font(size: int):
+    for name in ("arialbd.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf"):
+        try:
+            return ImageFont.truetype(name, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def build_row(
+    image_paths: List[Path],
+    tracks: List[Dict],
+    label: str,
+    label_fill: Tuple[int, int, int],
+    max_tracks: int,
+    viz_height: int,
+    line_width: int,
+    line_alpha: int,
+    track_spacing: float,
+) -> Image.Image:
     images = [Image.open(path).convert("RGB") for path in image_paths]
     scaled = []
     scales = []
@@ -328,23 +377,13 @@ def draw_tracks(image_paths: List[Path], tracks: List[Dict], out_path: Path, max
         offsets.append(x)
         x += image.width
 
-    canvas = Image.new("RGB", (x, viz_height), (0, 0, 0))
+    canvas = Image.new("RGBA", (x, viz_height), (0, 0, 0, 255))
     for image, xoff in zip(scaled, offsets):
-        canvas.paste(image, (xoff, 0))
+        canvas.paste(image.convert("RGBA"), (xoff, 0))
 
-    full_len = len(image_paths)
-    ranked = sorted(
-        enumerate(tracks),
-        key=lambda item: (
-            len(item[1]["frames"]) == full_len,
-            len(item[1]["frames"]),
-            np.mean(item[1]["confidences"]),
-        ),
-        reverse=True,
-    )[:max_tracks]
-
-    draw = ImageDraw.Draw(canvas)
-    for draw_idx, (_, track) in enumerate(ranked):
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    for draw_idx, (_, track) in enumerate(select_tracks(tracks, max_tracks, track_spacing)):
         points = []
         for frame, point in zip(track["frames"], track["points"]):
             sx, sy = scales[frame]
@@ -352,9 +391,45 @@ def draw_tracks(image_paths: List[Path], tracks: List[Dict], out_path: Path, max
 
         color = color_for(draw_idx)
         if len(points) > 1:
-            draw.line(points, fill=color, width=2)
-        for px, py in points:
-            draw.ellipse((px - 2, py - 2, px + 2, py + 2), fill=color)
+            draw.line(points, fill=(*color, max(0, min(255, line_alpha))), width=max(1, line_width))
+
+    canvas = Image.alpha_composite(canvas, overlay)
+    label_draw = ImageDraw.Draw(canvas)
+    font = load_label_font(max(18, int(viz_height * 0.18)))
+    bbox = label_draw.textbbox((0, 0), label, font=font)
+    pad_x = max(8, int(viz_height * 0.04))
+    pad_y = max(4, int(viz_height * 0.02))
+    rect = (0, 0, bbox[2] - bbox[0] + pad_x * 2, bbox[3] - bbox[1] + pad_y * 2)
+    label_draw.rectangle(rect, fill=(*label_fill, 245))
+    label_draw.text((pad_x, pad_y), label, fill=(0, 0, 0, 255), font=font)
+    return canvas.convert("RGB")
+
+
+def draw_comparison(
+    image_paths: List[Path],
+    nn_tracks: List[Dict],
+    det_tracks: List[Dict],
+    out_path: Path,
+    max_tracks: int,
+    viz_height: int,
+    line_width: int,
+    line_alpha: int,
+    track_spacing: float,
+):
+    nn_row = build_row(
+        image_paths, nn_tracks, "NN-JamMa", (255, 255, 255),
+        max_tracks, viz_height, line_width, line_alpha, track_spacing
+    )
+    det_row = build_row(
+        image_paths, det_tracks, "DeT-JamMa", (255, 205, 0),
+        max_tracks, viz_height, line_width, line_alpha, track_spacing
+    )
+
+    gap = max(10, int(viz_height * 0.08))
+    width = max(nn_row.width, det_row.width)
+    canvas = Image.new("RGB", (width, nn_row.height + gap + det_row.height), (255, 255, 255))
+    canvas.paste(nn_row, (0, 0))
+    canvas.paste(det_row, (0, nn_row.height + gap))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out_path)
@@ -371,30 +446,61 @@ def main():
     device = torch.device(args.device if args.device == "cuda" and torch.cuda.is_available() else "cpu")
     logger.info(f"device={device}")
 
-    model = DeTMatcher(build_config(args), args.ckpt_path).to(device).eval()
-    pair_results = run_sequence(model, image_paths, args, device)
-    tracks = build_tracks(pair_results, args.link_radius)
+    nn_model = JamMaDemoMatcher(build_config(args, use_det=False), args.ckpt_path).to(device).eval()
+    nn_pair_results = run_sequence(nn_model, image_paths, args, device, use_det=False, label="NN-JamMa")
+    nn_tracks = build_tracks(nn_pair_results, args.link_radius)
+    del nn_model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
-    full_tracks = [track for track in tracks if len(track["frames"]) == len(image_paths)]
+    det_model = JamMaDemoMatcher(build_config(args, use_det=True), args.ckpt_path).to(device).eval()
+    det_pair_results = run_sequence(det_model, image_paths, args, device, use_det=True, label="DeT-JamMa")
+    det_tracks = build_tracks(det_pair_results, args.link_radius)
+
     payload = {
         "images": [str(path) for path in image_paths],
-        "num_pairs": len(pair_results),
-        "num_tracks": len(tracks),
-        "num_full_tracks": len(full_tracks),
-        "pairs": [
-            {"edge": pair["edge"], "num_matches": int(len(pair["mkpts0"]))}
-            for pair in pair_results
-        ],
-        "tracks": tracks,
+        "methods": {
+            "nn-jamma": {
+                "num_pairs": len(nn_pair_results),
+                "num_tracks": len(nn_tracks),
+                "num_full_tracks": sum(len(track["frames"]) == len(image_paths) for track in nn_tracks),
+                "pairs": [
+                    {"edge": pair["edge"], "num_matches": int(len(pair["mkpts0"]))}
+                    for pair in nn_pair_results
+                ],
+                "tracks": nn_tracks,
+            },
+            "det-jamma": {
+                "num_pairs": len(det_pair_results),
+                "num_tracks": len(det_tracks),
+                "num_full_tracks": sum(len(track["frames"]) == len(image_paths) for track in det_tracks),
+                "pairs": [
+                    {"edge": pair["edge"], "num_matches": int(len(pair["mkpts0"]))}
+                    for pair in det_pair_results
+                ],
+                "tracks": det_tracks,
+            },
+        },
     }
 
     json_path = args.output_dir / "tracks.json"
     json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    draw_tracks(image_paths, tracks, args.output_dir / "tracks.png", args.max_viz_tracks, args.viz_height)
+    comparison_path = args.output_dir / "comparison.png"
+    draw_comparison(
+        image_paths,
+        nn_tracks,
+        det_tracks,
+        comparison_path,
+        args.max_viz_tracks,
+        args.viz_height,
+        args.line_width,
+        args.line_alpha,
+        args.track_spacing,
+    )
 
     logger.info(f"Saved: {json_path}")
-    logger.info(f"Saved: {args.output_dir / 'tracks.png'}")
-    logger.info(f"tracks={len(tracks)}, full_tracks={len(full_tracks)}")
+    logger.info(f"Saved: {comparison_path}")
+    logger.info(f"tracks: nn-jamma={len(nn_tracks)}, det-jamma={len(det_tracks)}")
 
 
 if __name__ == "__main__":

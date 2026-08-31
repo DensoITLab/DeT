@@ -34,7 +34,7 @@ Download the DeT checkpoint separately and place it at `weights/jamma.ckpt` for 
 python demo/demo_det.py
 ```
 
-By default, the demo reads `weights/jamma.ckpt` and `demo/aseets/sample1.jpg`, `sample2.jpg`, `sample3.jpg`.
+By default, the demo reads `weights/jamma.ckpt` and `demo/images/image1.jpg` through `image5.jpg`.
 The IMC SfM script uses `--jamma_ckpt`, and the tracking scripts use `--ckpt_path`. Scripts that accept `official` load the upstream JamMa checkpoint for compatibility checks.
 The paper evaluation scripts use `CKPT_PATH`:
 
@@ -44,7 +44,7 @@ CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_all.sh
 
 ## DeT Demo
 
-The demo runs only the DeT tracking path. With the default sample files and checkpoint in place, it runs without arguments:
+The demo compares NN-JamMa and DeT-JamMa tracking on the same ordered image sequence. With the default sample files and checkpoint in place, it runs without arguments:
 
 ```bash
 python demo/demo_det.py
@@ -68,7 +68,7 @@ python demo/demo_det.py \
   --ckpt_path /path/to/det.ckpt
 ```
 
-The demo writes `tracks.json` and `tracks.png` under the output directory.
+The demo writes `tracks.json` and `comparison.png` under the output directory. The comparison figure shows NN-JamMa on top and DeT-JamMa on the bottom.
 
 ## Paper Evaluation
 
