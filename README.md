@@ -34,7 +34,7 @@ Download the DeT checkpoint separately and place it at `weights/jamma.ckpt` for 
 python demo/demo_det.py
 ```
 
-By default, the demo reads `weights/jamma.ckpt` and the first three London Bridge images under `assets/phototourism_sample_images`.
+By default, the demo reads `weights/jamma.ckpt` and the first three Piazza San Marco images under `assets/phototourism_sample_images`.
 The IMC SfM script uses `--jamma_ckpt`, and the tracking scripts use `--ckpt_path`. Scripts that accept `official` load the upstream JamMa checkpoint for compatibility checks.
 The paper evaluation scripts use `CKPT_PATH`:
 

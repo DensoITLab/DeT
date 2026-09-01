@@ -15,9 +15,9 @@ from loguru import logger
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 DEFAULT_IMAGE_PATHS = [
-    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_19481797_2295892421.jpg",
-    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_49190386_5209386933.jpg",
-    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_78916675_4568141288.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_06795901_3725050516.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_15148634_5228701572.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_18627786_5929294590.jpg",
 ]
 DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
 TRACK_COLOR = (0, 155, 112)
@@ -122,7 +122,7 @@ def parse_args():
         "--images",
         nargs="+",
         default=None,
-        help="Ordered image paths. Defaults to the first three London Bridge images in assets/phototourism_sample_images.",
+        help="Ordered image paths. Defaults to the first three Piazza San Marco images in assets/phototourism_sample_images.",
     )
     parser.add_argument("--image_dir", type=Path, default=None, help="Directory with ordered images.")
     parser.add_argument("--pattern", type=str, default="*.jpg", help="Glob pattern used with --image_dir.")
