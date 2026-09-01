@@ -34,7 +34,7 @@ Download the DeT checkpoint separately and place it at `weights/jamma.ckpt` for 
 python demo/demo_det.py
 ```
 
-By default, the demo reads `weights/jamma.ckpt` and `demo/images/image1.jpg` through `image5.jpg`.
+By default, the demo reads `weights/jamma.ckpt` and the five Piazza San Marco images under `assets/phototourism_sample_images`.
 The IMC SfM script uses `--jamma_ckpt`, and the tracking scripts use `--ckpt_path`. Scripts that accept `official` load the upstream JamMa checkpoint for compatibility checks.
 The paper evaluation scripts use `CKPT_PATH`:
 
@@ -108,6 +108,7 @@ test_megadepth_tracking.py MegaDepth multi-view tracking evaluation
 ## Acknowledgements
 
 This codebase is based on [JamMa](https://github.com/leoluxxx/JamMa). Parts of the upstream code are derived from LoFTR and XoFTR. We thank the authors for releasing their implementations.
+The `assets/` directory is copied from the upstream JamMa repository and is used for the default demo inputs.
 
 ## Citation
 

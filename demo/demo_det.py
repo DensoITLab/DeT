@@ -16,8 +16,11 @@ from loguru import logger
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 DEFAULT_IMAGE_PATHS = [
-    PROJECT_ROOT / "demo" / "images" / f"image{i}.jpg"
-    for i in range(1, 6)
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_06795901_3725050516.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_15148634_5228701572.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_18627786_5929294590.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_43351518_2659980686.jpg",
+    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_58751010_4849458397.jpg",
 ]
 DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
 
@@ -118,7 +121,7 @@ def parse_args():
         "--images",
         nargs="+",
         default=None,
-        help="Ordered image paths. Defaults to demo/images/image1.jpg ... image5.jpg.",
+        help="Ordered image paths. Defaults to the five Piazza San Marco images in assets/phototourism_sample_images.",
     )
     parser.add_argument("--image_dir", type=Path, default=None, help="Directory with ordered images.")
     parser.add_argument("--pattern", type=str, default="*.jpg", help="Glob pattern used with --image_dir.")

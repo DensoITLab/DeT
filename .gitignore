@@ -41,6 +41,7 @@ conda-meta/
 *.onnx
 *.npy
 *.npz
+!/assets/**/*.npz
 
 # OS and editor files
 .DS_Store
