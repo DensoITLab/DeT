@@ -1,19 +1,331 @@
+from __future__ import annotations
+
 import argparse
+import dataclasses
 import json
+import math
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
-import torch
 
-from eval.geometry import load_cam_from_dir, symmetric_epi_errors
-from eval.matchers import PAIR_MATCHERS
-from eval.records import EvalContext, MethodSpec, PairMatchOutput, PairRequest
 
-try:
-    from scipy.spatial import cKDTree
-except Exception:
-    cKDTree = None
+@dataclasses.dataclass
+class CameraParams:
+    K: np.ndarray
+    R: np.ndarray
+    t: np.ndarray
+
+
+@dataclasses.dataclass
+class PairRequest:
+    img_a: Path
+    img_b: Path
+    image_id_a: int
+    image_id_b: int
+    prev_state: Any = None
+
+
+@dataclasses.dataclass
+class PairMatchOutput:
+    mkpts0: Any
+    mkpts1: Any
+    confidence: Optional[Any]
+    flops: float
+    model_runtime_ms: float
+    state: Any = None
+
+
+@dataclasses.dataclass
+class MethodSpec:
+    name: str
+    runner: Callable[["EvalContext", PairRequest], PairMatchOutput]
+    link_mode: str
+    use_prev_state: bool
+
+
+@dataclasses.dataclass
+class EvalContext:
+    args: argparse.Namespace
+    device: Any
+    models: Dict[str, Any]
+    configs: Dict[str, Any]
+    flops_cache: Dict[Tuple[str, bool], float]
+    warmup_cache: Dict[Tuple[str, bool], bool]
+    timer_events: Dict[str, Tuple[Any, Any]]
+    camera_cache: Dict[Tuple[str, str, bool], List[CameraParams]]
+
+
+PAIR_MATCHERS: Dict[str, MethodSpec] = {}
+
+
+def add_tracking_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument("--data_cfg_path", type=str, default="configs/data/megadepth_test_1500.py")
+    parser.add_argument("--main_cfg_path", type=str, default="configs/jamma/outdoor/test.py")
+    parser.add_argument("--ckpt_path", type=str, default="weights/jamma.ckpt")
+    parser.add_argument("--dump_dir", type=str, default="dump/eval_tracking")
+    parser.add_argument("--profiler_name", type=str, default="inference")
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--methods", type=str, nargs="+", default=["nn-jamma", "det-jamma"])
+    parser.add_argument("--bag_size", type=int, default=5)
+    parser.add_argument("--topk", type=int, default=20000)
+    parser.add_argument("--epi_thr", type=float, default=1e-3)
+    parser.add_argument("--nn_link_radius", type=float, default=5.0 * math.sqrt(2.0))
+    parser.add_argument("--det_search_radius", type=float, default=832.0 * math.sqrt(2.0))
+    parser.add_argument("--det_fine_thr", type=float, default=0.0)
+    parser.add_argument("--custom_fine_flex_thr", type=float, default=0.1)
+    parser.add_argument("--resize", type=int, default=None)
+    parser.add_argument("--df", type=int, default=None)
+    parser.add_argument("--no_padding", action="store_true")
+    parser.add_argument("--thr", type=float, default=None)
+    parser.add_argument("--flip_w2c", action="store_true")
+    parser.add_argument("--save_json", type=Path, default=None)
+    parser.add_argument("--save_summary_json", type=Path, default=None)
+    parser.add_argument("--save_errors", action="store_true")
+    parser.add_argument("--dataset_name", type=str, default=None)
+    return parser
+
+
+def register_pair_matcher(name: str, link_mode: str, use_prev_state: bool):
+    def decorate(fn: Callable[[EvalContext, PairRequest], PairMatchOutput]):
+        PAIR_MATCHERS[name] = MethodSpec(
+            name=name,
+            runner=fn,
+            link_mode=link_mode,
+            use_prev_state=use_prev_state,
+        )
+        return fn
+
+    return decorate
+
+
+def build_jamma_config(args: argparse.Namespace, use_det: bool):
+    from src.config.default import get_cfg_defaults
+
+    config = get_cfg_defaults()
+    config.merge_from_file(args.main_cfg_path)
+    config.merge_from_file(args.data_cfg_path)
+    config.JAMMA.DET.USE_DET = bool(use_det)
+    config.JAMMA.DET.SEARCH_RADIUS = float(args.det_search_radius)
+    config.JAMMA.DET.FINE_THR = float(args.det_fine_thr)
+    config.JAMMA.USE_COMPILE = False
+    if args.thr is not None:
+        config.JAMMA.MATCH_COARSE.THR = float(args.thr)
+    return config
+
+
+def get_jamma_model(context: EvalContext, method_name: str, use_det: bool):
+    if method_name not in context.models:
+        import pytorch_lightning as pl
+
+        from src.lightning.lightning_jamma import PL_JamMa
+        from src.utils.profiler import build_profiler
+
+        config = build_jamma_config(context.args, use_det=use_det)
+        if not context.configs:
+            pl.seed_everything(config.TRAINER.SEED)
+        profiler = build_profiler(context.args.profiler_name)
+        model = PL_JamMa(
+            config,
+            pretrained_ckpt=context.args.ckpt_path,
+            profiler=profiler,
+            dump_dir=context.args.dump_dir,
+        )
+        context.models[method_name] = model.to(context.device).eval()
+        context.configs[method_name] = config
+    return context.models[method_name]
+
+
+def _image_params(args: argparse.Namespace, config) -> Tuple[int, int, bool]:
+    resize = args.resize if args.resize is not None else int(config.DATASET.MGDPT_IMG_RESIZE)
+    df = args.df if args.df is not None else int(config.DATASET.MGDPT_DF)
+    padding = not bool(args.no_padding)
+    return resize, df, padding
+
+
+def _coarse_mask(mask: Optional[Any], image: Any):
+    import torch
+    import torch.nn.functional as F
+
+    if mask is None:
+        mask = torch.ones(image.shape[-2:], dtype=torch.bool)
+    return F.interpolate(mask[None, None].float(), scale_factor=0.125, mode="nearest")[0].bool()
+
+
+def _det_state(result: Dict[str, Any]) -> Dict[str, Any]:
+    keys = (
+        "image_idB",
+        "mconf_f",
+        "mkpts1_f",
+        "mkpts1_subref",
+        "mkpts1_f1_fine",
+        "mkpts1_f1_window",
+        "m_bids",
+    )
+    return {key: result[key] for key in keys if key in result}
+
+
+def run_jamma_pair(
+    context: EvalContext,
+    request: PairRequest,
+    method_name: str,
+    use_det: bool,
+) -> PairMatchOutput:
+    import torch
+
+    from src.utils.dataset import read_megadepth_color
+
+    model = get_jamma_model(context, method_name=method_name, use_det=use_det)
+    config = context.configs[method_name]
+    resize, df, padding = _image_params(context.args, config)
+
+    image0, scale0, mask0, prepad0, *_ = read_megadepth_color(str(request.img_a), resize, df, padding)
+    image1, scale1, mask1, prepad1, *_ = read_megadepth_color(str(request.img_b), resize, df, padding)
+
+    data = {
+        "imagec_0": image0.to(context.device),
+        "imagec_1": image1.to(context.device),
+        "mask0": _coarse_mask(mask0, image0).to(context.device),
+        "mask1": _coarse_mask(mask1, image1).to(context.device),
+        "scale0": scale0.unsqueeze(0).to(context.device),
+        "scale1": scale1.unsqueeze(0).to(context.device),
+        "prepad_size0": prepad0.unsqueeze(0).to(context.device),
+        "prepad_size1": prepad1.unsqueeze(0).to(context.device),
+        "custom_fine_flex_thr": float(context.args.custom_fine_flex_thr),
+        "image_idA": int(request.image_id_a),
+        "image_idB": int(request.image_id_b),
+    }
+    if request.prev_state is not None:
+        data["prev_data"] = request.prev_state
+
+    flops_key = (method_name, request.prev_state is not None)
+    if flops_key not in context.flops_cache:
+        model._calc_flops_once(data)
+        context.flops_cache[flops_key] = float(model._flops_backbone + model._flops_matcher)
+
+    warmup_key = (method_name, request.prev_state is not None)
+    with torch.inference_mode():
+        if warmup_key not in context.warmup_cache:
+            for _ in range(30):
+                model.backbone(data)
+                model.matcher(data, mode="test")
+            context.warmup_cache[warmup_key] = True
+
+        if context.device.type == "cuda":
+            if "model" not in context.timer_events:
+                context.timer_events["model"] = (
+                    torch.cuda.Event(enable_timing=True),
+                    torch.cuda.Event(enable_timing=True),
+                )
+            start_event, end_event = context.timer_events["model"]
+            torch.cuda.synchronize()
+            start_event.record()
+            model.backbone(data)
+            model.matcher(data, mode="test")
+            end_event.record()
+            torch.cuda.synchronize()
+            model_runtime_ms = float(start_event.elapsed_time(end_event))
+        else:
+            start = time.perf_counter()
+            model.backbone(data)
+            model.matcher(data, mode="test")
+            model_runtime_ms = float((time.perf_counter() - start) * 1000.0)
+
+    result = data
+    result.pop("prev_data", None)
+    state = _det_state(result) if use_det else None
+    return PairMatchOutput(
+        mkpts0=result["mkpts0_f_origin"],
+        mkpts1=result["mkpts1_f_origin"],
+        confidence=result.get("mconf_f"),
+        flops=context.flops_cache[flops_key],
+        model_runtime_ms=model_runtime_ms,
+        state=state,
+    )
+
+
+@register_pair_matcher("nn-jamma", link_mode="nearest", use_prev_state=False)
+def run_nn_jamma_pair(context: EvalContext, request: PairRequest) -> PairMatchOutput:
+    return run_jamma_pair(context, request, method_name="nn-jamma", use_det=False)
+
+
+@register_pair_matcher("det-jamma", link_mode="exact", use_prev_state=True)
+def run_det_jamma_pair(context: EvalContext, request: PairRequest) -> PairMatchOutput:
+    return run_jamma_pair(context, request, method_name="det-jamma", use_det=True)
+
+
+def _read_cam_from_h5(h5_path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    import h5py
+
+    if not h5_path.exists():
+        raise FileNotFoundError(h5_path)
+
+    with h5py.File(h5_path, "r") as f:
+        if "K" in f and "R" in f and ("T" in f or "t" in f):
+            K = np.asarray(f["K"])
+            R = np.asarray(f["R"])
+            t = np.asarray(f["T"] if "T" in f else f["t"])
+            return K.reshape(3, 3), R.reshape(3, 3), t.reshape(3)
+
+        for key in f.keys():
+            group = f[key]
+            if isinstance(group, h5py.Group) and "K" in group and "R" in group and ("T" in group or "t" in group):
+                K = np.asarray(group["K"])
+                R = np.asarray(group["R"])
+                t = np.asarray(group["T"] if "T" in group else group["t"])
+                return K.reshape(3, 3), R.reshape(3, 3), t.reshape(3)
+
+    raise KeyError(f"K/R/T not found in {h5_path}")
+
+
+def load_cam_from_dir(calib_dir: Path, img_path: Path, flip_w2c: bool) -> CameraParams:
+    K, R, t = _read_cam_from_h5(calib_dir / f"calibration_{img_path.stem}.h5")
+    if flip_w2c:
+        R, t = R.T, -R.T @ t
+    return CameraParams(K=K, R=R, t=t)
+
+
+def relative_pose(cam_a: CameraParams, cam_b: CameraParams) -> Tuple[np.ndarray, np.ndarray]:
+    R_ba = cam_b.R @ cam_a.R.T
+    t_ba = cam_b.t - R_ba @ cam_a.t
+    return R_ba, t_ba
+
+
+def symmetric_epi_errors(
+    x0_px: np.ndarray,
+    x1_px: np.ndarray,
+    cam0: CameraParams,
+    cam1: CameraParams,
+    device: Any,
+) -> np.ndarray:
+    import torch
+
+    from src.utils.metrics import symmetric_epipolar_distance
+
+    if x0_px.size == 0:
+        return np.zeros((0,), dtype=np.float64)
+
+    R01, t01 = relative_pose(cam0, cam1)
+    tx = np.array(
+        [
+            [0.0, -t01[2], t01[1]],
+            [t01[2], 0.0, -t01[0]],
+            [-t01[1], t01[0], 0.0],
+        ],
+        dtype=np.float32,
+    )
+    E = tx @ R01
+
+    pts0 = torch.from_numpy(x0_px.astype(np.float32)).to(device)
+    pts1 = torch.from_numpy(x1_px.astype(np.float32)).to(device)
+    E_t = torch.from_numpy(E.astype(np.float32)).to(device)
+    K0_t = torch.from_numpy(cam0.K.astype(np.float32)).to(device)
+    K1_t = torch.from_numpy(cam1.K.astype(np.float32)).to(device)
+
+    with torch.no_grad():
+        errs = symmetric_epipolar_distance(pts0, pts1, E_t, K0_t, K1_t)
+    return errs.detach().cpu().numpy().astype(np.float64)
 
 
 def _json_default(obj: Any):
@@ -48,6 +360,8 @@ def find_bag_files(subset_dir: Path, bag_size: int) -> List[Path]:
 
 
 def _to_numpy(value: Any) -> np.ndarray:
+    import torch
+
     if value is None:
         return np.zeros((0,), dtype=np.float64)
     if torch.is_tensor(value):
@@ -56,6 +370,8 @@ def _to_numpy(value: Any) -> np.ndarray:
 
 
 def _prepare_matches(output: PairMatchOutput, topk: int) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], int]:
+    import torch
+
     if torch.is_tensor(output.mkpts0) and torch.is_tensor(output.mkpts1):
         mk0_t = output.mkpts0.detach()
         mk1_t = output.mkpts1.detach()
@@ -161,6 +477,11 @@ def _link_nearest(
     prev_tids: Optional[np.ndarray],
     radius: float,
 ) -> Tuple[int, np.ndarray, np.ndarray]:
+    try:
+        from scipy.spatial import cKDTree
+    except Exception:
+        cKDTree = None
+
     curr_points: List[List[float]] = []
     curr_tids: List[int] = []
     max_d2 = float(radius * radius)
@@ -388,6 +709,8 @@ def run_tracking_evaluation(
     subset_dir: Path,
     calib_dir: Path,
 ) -> Dict[str, Any]:
+    import torch
+
     if args.dataset_name is None:
         raise ValueError("--dataset_name must be set")
 

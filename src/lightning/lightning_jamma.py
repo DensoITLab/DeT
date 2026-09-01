@@ -51,8 +51,6 @@ class PL_JamMa(pl.LightningModule):
         self.JAMMA_cfg = lower_config(_config['jamma'])
         self.profiler = profiler or PassThroughProfiler()
         self.n_vals_plot = max(config.TRAINER.N_VAL_PAIRS_TO_PLOT // config.TRAINER.WORLD_SIZE, 1)
-        self.viz_path = Path('visualization')
-        self.viz_path.mkdir(parents=True, exist_ok=True)
         # Matcher: JamMa
         self.backbone = CovNextV2_nano()
         self.matcher = JamMa(config=_config['jamma'], profiler=profiler)
@@ -336,8 +334,6 @@ class PL_JamMa(pl.LightningModule):
             batch['runtime'] = self.start_event.elapsed_time(self.end_event)
 
         ret_dict, rel_pair_names = self._compute_metrics(batch)
-
-        # Visualization #
 
         with self.profiler.profile("dump_results"):
             if self.dump_dir is not None:
