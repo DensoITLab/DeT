@@ -18,7 +18,6 @@ DEFAULT_IMAGE_PATHS = [
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_19481797_2295892421.jpg",
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_49190386_5209386933.jpg",
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_78916675_4568141288.jpg",
-    PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_94185272_3874562886.jpg",
 ]
 DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
 TRACK_PALETTE = [
@@ -128,7 +127,7 @@ def parse_args():
         "--images",
         nargs="+",
         default=None,
-        help="Ordered image paths. Defaults to the London Bridge images in assets/phototourism_sample_images.",
+        help="Ordered image paths. Defaults to the first three London Bridge images in assets/phototourism_sample_images.",
     )
     parser.add_argument("--image_dir", type=Path, default=None, help="Directory with ordered images.")
     parser.add_argument("--pattern", type=str, default="*.jpg", help="Glob pattern used with --image_dir.")
