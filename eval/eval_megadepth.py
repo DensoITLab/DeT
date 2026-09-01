@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
+import sys
 from pathlib import Path
 
-from eval_tracking_common import add_common_tracking_args, run_tracking_evaluation
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from eval.options import add_tracking_args
 
 
 def normalize_scene(scene_name: str) -> str:
@@ -16,7 +20,7 @@ def normalize_scene(scene_name: str) -> str:
 
 def parse_args():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    add_common_tracking_args(parser)
+    add_tracking_args(parser)
     parser.set_defaults(
         data_cfg_path="configs/data/megadepth_test_1500.py",
         dataset_name="megadepth",
@@ -40,6 +44,9 @@ def main():
     subset_dir = args.subset_dir or scene_root / "5bag"
     dataset_root = args.dataset_root or args.megadepth_root
     calib_dir = args.calib_dir or scene_root / "calibration"
+
+    from eval.tracking import run_tracking_evaluation
+
     run_tracking_evaluation(args, dataset_root=dataset_root, subset_dir=subset_dir, calib_dir=calib_dir)
 
 

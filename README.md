@@ -35,11 +35,12 @@ python demo/demo_det.py
 ```
 
 By default, the demo reads `weights/jamma.ckpt` and the first three Piazza San Marco images under `assets/phototourism_sample_images`.
-The IMC SfM script uses `--jamma_ckpt`, and the tracking scripts use `--ckpt_path`.
-The paper evaluation scripts use `CKPT_PATH`:
+The paper tracking evaluation scripts use `--ckpt_path`:
 
 ```bash
-CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_all.sh
+python -m eval.eval_imc --ckpt_path weights/jamma.ckpt
+python -m eval.eval_megadepth --scene_name 0015 --ckpt_path weights/jamma.ckpt
+python -m eval.eval_megadepth --scene_name 0022 --ckpt_path weights/jamma.ckpt
 ```
 
 ## DeT Demo
@@ -73,41 +74,38 @@ The default visualization uses a 720 px row height. Use `--viz_height`, `--label
 
 ## Paper Evaluation
 
-The paper evaluation scripts run 5-frame bags for IMC and MegaDepth. Set the checkpoint path and, if needed, override dataset roots with environment variables.
+The paper evaluation scripts run 5-frame bags for IMC and MegaDepth.
 
 ```bash
-CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_imc.sh
-CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_megadepth_0015_0022.sh
-CKPT_PATH=/path/to/det.ckpt bash scripts/reproduce_test/paper_all.sh
+python -m eval.eval_imc --ckpt_path weights/jamma.ckpt
+python -m eval.eval_megadepth --scene_name 0015 --ckpt_path weights/jamma.ckpt
+python -m eval.eval_megadepth --scene_name 0022 --ckpt_path weights/jamma.ckpt
 ```
 
 The evaluation entry points are:
 
-- `scripts/reproduce_test/paper_imc.sh`: IMC `reichstag`, `sacre_coeur`, and `st_peters_square`.
-- `scripts/reproduce_test/paper_megadepth_0015_0022.sh`: MegaDepth `0015` and `0022`.
-- `eval_imc.py`: IMC tracking metrics for the left and middle plots in Fig. 6.
-- `eval_megadepth.py`: MegaDepth tracking metrics for the left and middle plots in Fig. 6.
-- `test_imc_sfm.py`: online SfM evaluation for `--method det-jamma` and `--method nn-jamma`.
+- `eval/eval_imc.py`: IMC tracking metrics for the left and middle plots in Fig. 6.
+- `eval/eval_megadepth.py`: MegaDepth tracking metrics for the left and middle plots in Fig. 6.
 
-Default data locations are `data/imc` and `data/megadepth`. Override them with `IMC_ROOT`, `MEGADEPTH_ROOT`, or `MEGADEPTH_SFM_ROOT`. Results are written under `outputs/paper/imc` and `outputs/paper/megadepth`.
-The MegaDepth script also accepts `15 22` and normalizes them to `0015 0022`.
+Default data locations are `data/imc` and `data/megadepth`. Override them with `--imc_root`, `--megadepth_root`, `--megadepth_sfm_root`, `--subset_dir`, `--dataset_root`, or `--calib_dir`. Results are written under `outputs/fig6_imc_tracking*.json` and `outputs/fig6_megadepth_tracking*.json`.
+The MegaDepth script also accepts `15` and `22` and normalizes them to `0015` and `0022`.
 The tracking scripts run `--methods nn-jamma det-jamma` by default. They report average correct tracks from frame 1 to frame 5 using symmetric epipolar error `< 1e-3`, average FLOPs per pair, and average model inference time per pair. FLOPs are profiled once per method state and reused instead of being measured for every image pair. The timing window covers only the model forward pass, not image loading, preprocessing, track linking, epipolar scoring, FLOPs profiling, or warmup.
 
-To add another tracker, add one decorated pair-matching function to `eval_tracking_common.py` that returns `PairMatchOutput`. The evaluator handles bag loading, track linking, epipolar scoring, FLOPs/time aggregation, and JSON output.
+To add another tracker, add one decorated pair-matching function to `eval/matchers.py` that returns `PairMatchOutput`. The evaluator handles bag loading, track linking, epipolar scoring, FLOPs/time aggregation, and JSON output.
 
 ## Repository Layout
 
 ```text
 configs/                   Inference and image preprocessing configs
 demo/demo_det.py           DeT sequence demo for 3+ images
-eval_tracking_common.py    Shared Fig. 6 tracking evaluation utilities
-eval_imc.py                IMC tracking metrics
-eval_megadepth.py          MegaDepth tracking metrics
-scripts/reproduce_test/    Paper evaluation launch scripts
+eval/eval_imc.py           IMC tracking metrics
+eval/eval_megadepth.py     MegaDepth tracking metrics
+eval/matchers.py           Pair-matching registry and model adapters
+eval/tracking.py           Dataset-agnostic tracking evaluation loop
+eval/geometry.py           Camera loading and epipolar scoring
+eval/options.py            Shared tracking-evaluation CLI options
+eval/records.py            Evaluation data containers
 src/                       DeT/JamMa model and utility code
-test_imc_sfm.py            IMC-style online SfM evaluation
-test_imc_tracking.py       Compatibility wrapper for eval_imc.py
-test_megadepth_tracking.py Compatibility wrapper for eval_megadepth.py
 ```
 
 ## Acknowledgements
