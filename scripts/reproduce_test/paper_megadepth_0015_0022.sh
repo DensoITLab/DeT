@@ -7,7 +7,7 @@ PROJECT_DIR="${SCRIPTPATH}/../../"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 cd "${PROJECT_DIR}"
 
-CKPT_PATH="${CKPT_PATH:-/path/to/det.ckpt}"
+CKPT_PATH="${CKPT_PATH:-weights/jamma.ckpt}"
 MEGADEPTH_ROOT="${MEGADEPTH_ROOT:-data/megadepth}"
 MEGADEPTH_SFM_ROOT="${MEGADEPTH_SFM_ROOT:-${MEGADEPTH_ROOT}/Undistorted_SfM}"
 OUT_DIR="${OUT_DIR:-outputs/paper/megadepth}"
@@ -36,16 +36,15 @@ for SCENE_RAW in "${SCENES[@]}"; do
   SCENE=$(normalize_scene "${SCENE_RAW}")
   SCENE_ROOT="${MEGADEPTH_SFM_ROOT}/${SCENE}"
 
-  python -u ./test_megadepth_tracking.py \
+  python -u ./eval_megadepth.py \
     --ckpt_path "${CKPT_PATH}" \
-    --methods det-jamma \
+    --methods nn-jamma det-jamma \
     --data_cfg_path "${DATA_CFG}" \
     --main_cfg_path "${MAIN_CFG}" \
     --dump_dir "${DUMP_DIR}/megadepth_${SCENE}" \
     --subset_dir "${SCENE_ROOT}/5bag" \
     --dataset_root "${MEGADEPTH_ROOT}" \
     --calib_dir "${SCENE_ROOT}/calibration" \
-    --depth_dir "${MEGADEPTH_SFM_ROOT}/depth_undistorted/${SCENE}" \
     --bag_size "${BAG_SIZE}" \
     --dataset_name megadepth \
     --scene_name "${SCENE}" \

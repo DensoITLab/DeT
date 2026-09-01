@@ -7,7 +7,7 @@ PROJECT_DIR="${SCRIPTPATH}/../../"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 cd "${PROJECT_DIR}"
 
-CKPT_PATH="${CKPT_PATH:-/path/to/det.ckpt}"
+CKPT_PATH="${CKPT_PATH:-weights/jamma.ckpt}"
 IMC_ROOT="${IMC_ROOT:-data/imc}"
 OUT_DIR="${OUT_DIR:-outputs/paper/imc}"
 DUMP_DIR="${DUMP_DIR:-dump/det_jamma}"
@@ -26,16 +26,15 @@ mkdir -p "${OUT_DIR}"
 for SCENE in "${SCENES[@]}"; do
   SCENE_ROOT="${IMC_ROOT}/${SCENE}/set_100"
 
-  python -u ./test_imc_tracking.py \
+  python -u ./eval_imc.py \
     --ckpt_path "${CKPT_PATH}" \
-    --methods det-jamma \
+    --methods nn-jamma det-jamma \
     --data_cfg_path "${DATA_CFG}" \
     --main_cfg_path "${MAIN_CFG}" \
     --dump_dir "${DUMP_DIR}/imc_${SCENE}" \
     --subset_dir "${SCENE_ROOT}/sub_set" \
     --dataset_root "${SCENE_ROOT}" \
     --calib_dir "${SCENE_ROOT}/calibration" \
-    --depth_dir "${SCENE_ROOT}/depth_maps" \
     --bag_size "${BAG_SIZE}" \
     --dataset_name imc \
     --scene_name "${SCENE}" \
