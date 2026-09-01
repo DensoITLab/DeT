@@ -20,16 +20,10 @@ DEFAULT_IMAGE_PATHS = [
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "london_bridge_78916675_4568141288.jpg",
 ]
 DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
-TRACK_PALETTE = [
-    (0, 145, 118),
-    (28, 171, 109),
-    (72, 178, 93),
-    (0, 126, 128),
-    (91, 162, 104),
-    (44, 118, 111),
-]
+TRACK_COLOR = (0, 155, 112)
+FOCUS_POINT_COLOR = (226, 63, 48)
 POINT_OUTLINE_COLOR = (3, 24, 24)
-ZOOM_BORDER_COLOR = (0, 126, 128)
+ZOOM_BORDER_COLOR = (42, 99, 176)
 
 from src.config.default import get_cfg_defaults
 from src.jamma.backbone import CovNextV2_nano
@@ -325,10 +319,6 @@ def build_tracks(pair_results, link_radius: float):
     return tracks
 
 
-def color_for(index: int):
-    return TRACK_PALETTE[index % len(TRACK_PALETTE)]
-
-
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -535,7 +525,7 @@ def build_row(
     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     visible_track_ids = selected_track_ids[:max_tracks]
-    for draw_idx, track_id in enumerate(visible_track_ids):
+    for track_id in visible_track_ids:
         if track_id >= len(tracks):
             continue
         track = tracks[track_id]
@@ -544,11 +534,10 @@ def build_row(
             sx, sy = scales[frame]
             points.append((offsets[frame] + point[0] * sx, point[1] * sy))
 
-        color = color_for(draw_idx)
         if len(points) > 1:
-            draw.line(points, fill=(*color, max(0, min(255, line_alpha))), width=max(1, line_width))
+            draw.line(points, fill=(*TRACK_COLOR, max(0, min(255, line_alpha))), width=max(1, line_width))
         for point in points:
-            draw_point(draw, point, color, point_radius, point_alpha)
+            draw_point(draw, point, TRACK_COLOR, point_radius, point_alpha)
 
     if zoom_box is not None and zoom_x is not None and zoom_y is not None:
         border = (*ZOOM_BORDER_COLOR, 230)
@@ -575,19 +564,16 @@ def build_row(
             width=line_width_zoom,
         )
 
-        zoom_track_id = int(zoom_region["track_id"])
-        zoom_color_idx = visible_track_ids.index(zoom_track_id) if zoom_track_id in visible_track_ids else 0
-        zoom_color = color_for(zoom_color_idx)
         if zoom_point is not None:
             main_point = (offsets[zoom_frame] + zoom_point[0] * sx, zoom_point[1] * sy)
-            draw_point(draw, main_point, zoom_color, point_radius + 2, 255)
+            draw_point(draw, main_point, FOCUS_POINT_COLOR, point_radius + 2, 255)
             crop_width = max(1, right - left)
             crop_height = max(1, bottom - top)
             inset_point = (
                 zoom_x + (zoom_point[0] - left) * zoom_size / crop_width,
                 zoom_y + (zoom_point[1] - top) * zoom_size / crop_height,
             )
-            draw_point(draw, inset_point, zoom_color, max(point_radius * 2, 6), 255)
+            draw_point(draw, inset_point, FOCUS_POINT_COLOR, max(point_radius * 2, 6), 255)
 
     canvas = Image.alpha_composite(canvas, overlay)
     label_draw = ImageDraw.Draw(canvas)
