@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import colorsys
 import json
 import math
 import sys
@@ -23,6 +22,15 @@ DEFAULT_IMAGE_PATHS = [
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_58751010_4849458397.jpg",
 ]
 DEFAULT_CKPT_PATH = "weights/jamma.ckpt"
+TRACK_PALETTE = [
+    (0, 145, 118),
+    (28, 171, 109),
+    (72, 178, 93),
+    (0, 126, 128),
+    (91, 162, 104),
+    (44, 118, 111),
+]
+POINT_OUTLINE_COLOR = (3, 24, 24)
 
 from src.config.default import get_cfg_defaults
 from src.jamma.backbone import CovNextV2_nano
@@ -136,6 +144,8 @@ def parse_args():
     parser.add_argument("--viz_height", type=int, default=720)
     parser.add_argument("--line_width", type=int, default=1)
     parser.add_argument("--line_alpha", type=int, default=120)
+    parser.add_argument("--point_radius", type=int, default=3)
+    parser.add_argument("--point_alpha", type=int, default=210)
     parser.add_argument("--track_spacing", type=float, default=10.0)
     parser.add_argument("--label_font_size", type=int, default=28)
     parser.add_argument("--device", type=str, default="cuda")
@@ -314,8 +324,7 @@ def build_tracks(pair_results, link_radius: float):
 
 
 def color_for(index: int):
-    r, g, b = colorsys.hsv_to_rgb((index * 0.61803398875) % 1.0, 0.85, 1.0)
-    return int(r * 255), int(g * 255), int(b * 255)
+    return TRACK_PALETTE[index % len(TRACK_PALETTE)]
 
 
 def starts_from_first_pair(track: Dict) -> bool:
@@ -382,6 +391,8 @@ def build_row(
     viz_height: int,
     line_width: int,
     line_alpha: int,
+    point_radius: int,
+    point_alpha: int,
     label_font_size: int,
 ) -> Image.Image:
     images = [Image.open(path).convert("RGB") for path in image_paths]
@@ -418,6 +429,15 @@ def build_row(
         color = color_for(draw_idx)
         if len(points) > 1:
             draw.line(points, fill=(*color, max(0, min(255, line_alpha))), width=max(1, line_width))
+        radius = max(1, point_radius)
+        fill_alpha = max(0, min(255, point_alpha))
+        outline_alpha = max(0, min(255, point_alpha + 30))
+        for px, py in points:
+            draw.ellipse(
+                (px - radius, py - radius, px + radius, py + radius),
+                fill=(*color, fill_alpha),
+                outline=(*POINT_OUTLINE_COLOR, outline_alpha),
+            )
 
     canvas = Image.alpha_composite(canvas, overlay)
     label_draw = ImageDraw.Draw(canvas)
@@ -441,6 +461,8 @@ def draw_comparison(
     viz_height: int,
     line_width: int,
     line_alpha: int,
+    point_radius: int,
+    point_alpha: int,
     track_spacing: float,
     label_font_size: int,
 ) -> List[int]:
@@ -453,11 +475,11 @@ def draw_comparison(
     )
     nn_row = build_row(
         image_paths, nn_tracks, "NN-JamMa", (255, 255, 255), selected_track_ids,
-        max_tracks, viz_height, line_width, line_alpha, label_font_size
+        max_tracks, viz_height, line_width, line_alpha, point_radius, point_alpha, label_font_size
     )
     det_row = build_row(
         image_paths, det_tracks, "DeT-JamMa", (255, 205, 0), selected_track_ids,
-        max_tracks, viz_height, line_width, line_alpha, label_font_size
+        max_tracks, viz_height, line_width, line_alpha, point_radius, point_alpha, label_font_size
     )
 
     gap = max(10, int(viz_height * 0.08))
@@ -508,6 +530,8 @@ def main():
         args.viz_height,
         args.line_width,
         args.line_alpha,
+        args.point_radius,
+        args.point_alpha,
         args.track_spacing,
         args.label_font_size,
     )
