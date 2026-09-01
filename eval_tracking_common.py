@@ -42,7 +42,7 @@ class PairMatchOutput:
     mkpts1: Any
     confidence: Optional[Any]
     flops: float
-    runtime_ms: float
+    model_runtime_ms: float
     state: Any = None
 
 
@@ -297,12 +297,12 @@ def run_jamma_pair(
             model.matcher(data, mode="test")
             end_event.record()
             torch.cuda.synchronize()
-            runtime_ms = float(start_event.elapsed_time(end_event))
+            model_runtime_ms = float(start_event.elapsed_time(end_event))
         else:
             start = time.perf_counter()
             model.backbone(data)
             model.matcher(data, mode="test")
-            runtime_ms = float((time.perf_counter() - start) * 1000.0)
+            model_runtime_ms = float((time.perf_counter() - start) * 1000.0)
 
     result = data
     result.pop("prev_data", None)
@@ -311,7 +311,7 @@ def run_jamma_pair(
         mkpts1=result["mkpts1_f_origin"],
         confidence=result.get("mconf_f"),
         flops=context.flops_cache[flops_key],
-        runtime_ms=runtime_ms,
+        model_runtime_ms=model_runtime_ms,
         state=result,
     )
 
@@ -482,7 +482,7 @@ def evaluate_bag(
     prev_tids: Optional[np.ndarray] = None
     pair_summaries: List[Dict[str, Any]] = []
     flops_total = 0.0
-    runtime_ms_total = 0.0
+    model_runtime_ms_total = 0.0
 
     for pair_index in range(args.bag_size - 1):
         request = PairRequest(
@@ -498,7 +498,7 @@ def evaluate_bag(
 
         mk0, mk1, conf, raw_matches = _prepare_matches(output, args.topk)
         flops_total += float(output.flops)
-        runtime_ms_total += float(output.runtime_ms)
+        model_runtime_ms_total += float(output.model_runtime_ms)
         pair_summaries.append(
             {
                 "pair_index": pair_index,
@@ -507,7 +507,7 @@ def evaluate_bag(
                 "raw_matches": raw_matches,
                 "used_matches": int(mk0.shape[0]),
                 "flops": float(output.flops),
-                "runtime_ms": float(output.runtime_ms),
+                "model_runtime_ms": float(output.model_runtime_ms),
             }
         )
 
@@ -568,9 +568,9 @@ def evaluate_bag(
         "median_epi_error_0_to_N": _finite_float(np.median(epi_errors)) if evaluated else None,
         "epi_threshold": float(args.epi_thr),
         "flops_total": float(flops_total),
-        "runtime_ms_total": float(runtime_ms_total),
+        "model_runtime_ms_total": float(model_runtime_ms_total),
         "avg_flops_per_pair_GMac": float((flops_total / num_pairs) / 1e9) if num_pairs else 0.0,
-        "avg_runtime_per_pair_ms": float(runtime_ms_total / num_pairs) if num_pairs else 0.0,
+        "avg_model_runtime_per_pair_ms": float(model_runtime_ms_total / num_pairs) if num_pairs else 0.0,
     }
     if args.save_errors:
         result["epi_errors_0_to_N"] = epi_errors.tolist()
@@ -582,11 +582,8 @@ def aggregate_results(per_bag: List[Dict[str, Any]]) -> Dict[str, Any]:
         return {
             "bags_total": 0,
             "avg_correct_tracks_0_to_N": 0.0,
-            "avg_correct_tracks_0_to_N_x1e2": 0.0,
             "avg_flops_per_pair_GMac": 0.0,
-            "avg_flops_per_pair_x1e2_GMac": 0.0,
-            "avg_runtime_per_pair_ms": 0.0,
-            "avg_runtime_per_pair_x1e2_ms": 0.0,
+            "avg_model_runtime_per_pair_ms": 0.0,
         }
 
     correct = np.asarray([r["correct_tracks_0_to_N"] for r in per_bag], dtype=np.float64)
@@ -594,11 +591,11 @@ def aggregate_results(per_bag: List[Dict[str, Any]]) -> Dict[str, Any]:
     start_tracks = np.asarray([r["tracks_start_at_0"] for r in per_bag], dtype=np.float64)
     total_pairs = int(sum(r["num_pairs"] for r in per_bag))
     total_flops = float(sum(r["flops_total"] for r in per_bag))
-    total_runtime = float(sum(r["runtime_ms_total"] for r in per_bag))
+    total_model_runtime = float(sum(r["model_runtime_ms_total"] for r in per_bag))
     total_correct = int(correct.sum())
     total_evaluated = int(full_tracks.sum())
     avg_flops_gmac = float((total_flops / total_pairs) / 1e9) if total_pairs else 0.0
-    avg_runtime_ms = float(total_runtime / total_pairs) if total_pairs else 0.0
+    avg_model_runtime_ms = float(total_model_runtime / total_pairs) if total_pairs else 0.0
 
     return {
         "bags_total": int(len(per_bag)),
@@ -611,13 +608,10 @@ def aggregate_results(per_bag: List[Dict[str, Any]]) -> Dict[str, Any]:
         "avg_full_tracks_0_to_N": float(full_tracks.mean()),
         "avg_correct_tracks_0_to_N": float(correct.mean()),
         "std_correct_tracks_0_to_N": float(correct.std(ddof=0)),
-        "avg_correct_tracks_0_to_N_x1e2": float(correct.mean() / 100.0),
         "avg_flops_per_pair_GMac": avg_flops_gmac,
-        "avg_flops_per_pair_x1e2_GMac": float(avg_flops_gmac / 100.0),
-        "avg_runtime_per_pair_ms": avg_runtime_ms,
-        "avg_runtime_per_pair_x1e2_ms": float(avg_runtime_ms / 100.0),
+        "avg_model_runtime_per_pair_ms": avg_model_runtime_ms,
         "total_flops_GMac": float(total_flops / 1e9),
-        "total_runtime_ms": total_runtime,
+        "total_model_runtime_ms": total_model_runtime,
     }
 
 
@@ -682,15 +676,14 @@ def run_tracking_evaluation(
         "methods": {name: data["summary"] for name, data in results.items()},
     }
 
-    print("\nmethod\tcorrect_tracks_x1e2\tflops_x1e2_GMac\ttime_x1e2_ms\tcorrect_tracks\tprecision")
+    print("\nmethod\tcorrect_tracks\tflops_GMac\tmodel_time_ms\tprecision")
     for method_name, data in results.items():
         s = data["summary"]
         print(
             f"{method_name}\t"
-            f"{s['avg_correct_tracks_0_to_N_x1e2']:.4f}\t"
-            f"{s['avg_flops_per_pair_x1e2_GMac']:.4f}\t"
-            f"{s['avg_runtime_per_pair_x1e2_ms']:.4f}\t"
             f"{s['avg_correct_tracks_0_to_N']:.2f}\t"
+            f"{s['avg_flops_per_pair_GMac']:.4f}\t"
+            f"{s['avg_model_runtime_per_pair_ms']:.4f}\t"
             f"{s['global_precision_0_to_N']:.4f}"
         )
 
