@@ -141,7 +141,8 @@ def parse_args():
     parser.add_argument("--point_alpha", type=int, default=210)
     parser.add_argument("--zoom_frame", type=int, default=2)
     parser.add_argument("--zoom_window_size", type=int, default=320)
-    parser.add_argument("--zoom_crop_size", type=float, default=96.0)
+    parser.add_argument("--zoom_crop_size", type=float, default=42.0)
+    parser.add_argument("--zoom_seed", type=int, default=None, help="Random seed for reproducible zoom selection.")
     parser.add_argument("--track_spacing", type=float, default=10.0)
     parser.add_argument("--label_font_size", type=int, default=28)
     parser.add_argument("--device", type=str, default="cuda")
@@ -399,11 +400,9 @@ def select_zoom_region(
     common_start_count: int,
     frame_index: int,
     base_crop_size: float,
+    seed: Optional[int],
 ) -> Optional[Dict]:
-    best_track_id = None
-    best_gap = -1.0
-    best_nn_point = None
-    best_det_point = None
+    candidates = []
     count = min(common_start_count, len(nn_tracks), len(det_tracks))
 
     for track_id in range(count):
@@ -418,25 +417,24 @@ def select_zoom_region(
             continue
 
         gap = float(np.linalg.norm(nn_point - det_point))
-        if not np.isfinite(gap) or gap <= best_gap:
+        if not np.isfinite(gap):
             continue
 
-        best_track_id = track_id
-        best_gap = gap
-        best_nn_point = nn_point
-        best_det_point = det_point
+        candidates.append((track_id, gap, nn_point, det_point))
 
-    if best_track_id is None or best_nn_point is None or best_det_point is None:
+    if not candidates:
         return None
 
-    center = (best_nn_point + best_det_point) * 0.5
-    crop_size = max(float(base_crop_size), best_gap + float(base_crop_size) * 0.75)
+    rng = np.random.default_rng(seed)
+    track_id, gap, nn_point, det_point = candidates[int(rng.integers(len(candidates)))]
+    center = (nn_point + det_point) * 0.5
+    crop_size = max(float(base_crop_size), gap + float(base_crop_size) * 0.75)
     return {
         "frame": frame_index,
-        "track_id": best_track_id,
+        "track_id": track_id,
         "center": center.tolist(),
         "crop_size": crop_size,
-        "gap": best_gap,
+        "gap": gap,
     }
 
 
@@ -607,6 +605,7 @@ def draw_comparison(
     zoom_frame: int,
     zoom_window_size: int,
     zoom_crop_size: float,
+    zoom_seed: Optional[int],
     track_spacing: float,
     label_font_size: int,
 ) -> Tuple[List[int], Optional[Dict]]:
@@ -623,6 +622,7 @@ def draw_comparison(
         common_start_count,
         zoom_frame,
         zoom_crop_size,
+        zoom_seed,
     )
     if zoom_region is not None and int(zoom_region["track_id"]) not in selected_track_ids:
         selected_track_ids = [int(zoom_region["track_id"])] + selected_track_ids
@@ -691,6 +691,7 @@ def main():
         args.zoom_frame,
         args.zoom_window_size,
         args.zoom_crop_size,
+        args.zoom_seed,
         args.track_spacing,
         args.label_font_size,
     )
