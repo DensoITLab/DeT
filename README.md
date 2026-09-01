@@ -4,8 +4,6 @@
 ![conference](https://img.shields.io/badge/ECCV-2026-blue)
 [![base](https://img.shields.io/badge/base-JamMa-6f42c1)](https://github.com/leoluxxx/JamMa)
 
-Yusuke Sekikawa, Hideki Shirai, Ruka Eto, Yuzhe Hao, Kengo Mitsui, Nakamasa Inoue
-
 Official PyTorch implementation for the ECCV 2026 paper **Detect by Track: Making Detector-Free Matcher Trackable**.
 
 DeT makes detector-free matching trackable across multiple views by steering the local similarity matrix from arbitrary sub-pixel query locations. This release implements DeT on top of [JamMa](https://github.com/leoluxxx/JamMa) and is intentionally scoped to:
@@ -117,6 +115,7 @@ The camera-ready citation will be updated once the official metadata is public.
 
 ```bibtex
 @inproceedings{det2026,
+  author    = {Yusuke Sekikawa and Hideki Shirai and Ruka Eto and Yuzhe Hao and Kengo Mitsui and Nakamasa Inoue},
   title     = {Detect by Track: Making Detector-Free Matcher Trackable},
   booktitle = {European Conference on Computer Vision (ECCV)},
   year      = {2026}
