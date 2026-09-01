@@ -116,7 +116,6 @@ def _check_idx(name: str, idx: torch.Tensor, size: int) -> None:
         mx = int(idx.max().item())
         assert 0 <= mn <= mx < size, f"{name}: range [{mn}, {mx}] out of [0, {size - 1}]"
 
-@torch.compile
 def _search_nearest_pt_torch(
     prev_points: torch.Tensor,   # [N, 2]
     now_points: torch.Tensor,    # [M, 2]
@@ -132,26 +131,29 @@ def _search_nearest_pt_torch(
         matched_confs: confidence values of matched now_points [len(now_id_list)]
     """
 
-    # pairwise distance
+    if prev_points.numel() == 0 or now_points.numel() == 0:
+        empty_idx = torch.empty(0, dtype=torch.long, device=prev_points.device)
+        empty_conf = now_confs.new_empty(0)
+        return empty_idx, empty_idx, empty_conf, now_confs.new_tensor(0.0)
+
     dists = torch.cdist(prev_points, now_points)
+    min_dists = dists.amin(dim=1)
 
-    min_dists, _ = dists.min(dim=1)
-    mask = dists <= max_dist
+    dists.mul_(-lambda_dist).add_(now_confs.unsqueeze(0))
+    min_allowed = now_confs.unsqueeze(0) - float(lambda_dist * max_dist)
+    dists.masked_fill_(dists < min_allowed, -INF)
 
-    confs = now_confs.unsqueeze(0).expand_as(dists)  # [N, M]
-    score = confs - lambda_dist * dists
-    score[~mask] = -1e9
+    best_score, best_idx = dists.max(dim=1)
+    valid_mask = best_score > -INF * 0.5
 
-    best_score, best_idx = score.max(dim=1)  # [N]
-    valid_mask = best_score > -1e8
+    now_id_list = best_idx[valid_mask]
+    valid_index = torch.nonzero(valid_mask, as_tuple=False).squeeze(1)
+    matched_confs = now_confs[now_id_list]
 
-    now_id_list = best_idx[valid_mask]                      # index into now_points / now_confs
-    valid_index = torch.nonzero(valid_mask, as_tuple=False).squeeze(1)  # index into prev_points
-    matched_confs = now_confs[now_id_list]                  # [len(now_id_list)]
+    count = valid_mask.sum().clamp_min(1)
+    valid_min_dists_mean = min_dists.masked_fill(~valid_mask, 0.0).sum() / count
 
-    valid_min_dists = min_dists[min_dists <= max_dist]
-
-    return now_id_list, valid_index, matched_confs, valid_min_dists.mean().item()
+    return now_id_list, valid_index, matched_confs, valid_min_dists_mean
 
 
 class DetRefine(nn.Module):
@@ -192,7 +194,6 @@ class DetRefine(nn.Module):
         )
         prev_kpts1 = prev_kpts1[mask0]
         prev_subref1 = prev_subref1[mask0]
-        prev_c0 = prev_c0  # center coords in 1/2 resolution
         prev_m_bids = prev_m_bids[mask0]
 
         # -----------------------------
@@ -201,15 +202,10 @@ class DetRefine(nn.Module):
         now_id_list, valid_index, matched_confs, valid_min_dists_mean = _search_nearest_pt_torch(
             prev_kpts1, mkpts0_f, mconf_f_sorted, max_dist=self.search_radius
         )
-        now_id_list = now_id_list.long()
-
         mk0_sel = mkpts0_f[now_id_list]
         mk1_sel = mkpts1_f[now_id_list]
 
-        # displacement in 1/2-res
-        mk0_2 = mk0_sel / 2
-        mk1_2 = mk1_sel / 2
-        diff = mk1_2 - mk0_2
+        diff = (mk1_sel - mk0_sel) * 0.5
         diff_int = torch.round(diff).to(torch.int)
 
         # -----------------------------
@@ -233,8 +229,8 @@ class DetRefine(nn.Module):
 
         idx1, new_c1, mask1 = _flat_idx_from_xy(
             mk1_2_center,
-            int(x2_min), int(y2_min),
-            int(x2_max), int(y2_max),
+            x2_min, y2_min,
+            x2_max, y2_max,
         )
 
         # mask both sides

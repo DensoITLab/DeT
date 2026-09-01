@@ -19,6 +19,11 @@ from src.utils.dataset import read_megadepth_color
 from src.utils.metrics import symmetric_epipolar_distance
 from src.utils.profiler import build_profiler
 
+try:
+    from scipy.spatial import cKDTree
+except Exception:
+    cKDTree = None
+
 
 @dataclasses.dataclass
 class CameraParams:
@@ -61,6 +66,9 @@ class EvalContext:
     models: Dict[str, PL_JamMa]
     configs: Dict[str, Any]
     flops_cache: Dict[Tuple[str, bool], float]
+    warmup_cache: Dict[Tuple[str, bool], bool]
+    timer_events: Dict[str, Tuple[Any, Any]]
+    camera_cache: Dict[Tuple[str, str, bool], List[CameraParams]]
 
 
 PAIR_MATCHERS: Dict[str, MethodSpec] = {}
@@ -247,6 +255,19 @@ def _coarse_mask(mask: Optional[torch.Tensor], image: torch.Tensor) -> torch.Ten
     return F.interpolate(mask[None, None].float(), scale_factor=0.125, mode="nearest")[0].bool()
 
 
+def _det_state(result: Dict[str, Any]) -> Dict[str, Any]:
+    keys = (
+        "image_idB",
+        "mconf_f",
+        "mkpts1_f",
+        "mkpts1_subref",
+        "mkpts1_f1_fine",
+        "mkpts1_f1_window",
+        "m_bids",
+    )
+    return {key: result[key] for key in keys if key in result}
+
+
 def run_jamma_pair(
     context: EvalContext,
     request: PairRequest,
@@ -281,16 +302,21 @@ def run_jamma_pair(
         model._calc_flops_once(data)
         context.flops_cache[flops_key] = float(model._flops_backbone + model._flops_matcher)
 
-    with torch.no_grad():
-        if not model.warmup:
+    warmup_key = (method_name, request.prev_state is not None)
+    with torch.inference_mode():
+        if warmup_key not in context.warmup_cache:
             for _ in range(30):
                 model.backbone(data)
                 model.matcher(data, mode="test")
-            model.warmup = True
+            context.warmup_cache[warmup_key] = True
 
         if context.device.type == "cuda":
-            start_event = torch.cuda.Event(enable_timing=True)
-            end_event = torch.cuda.Event(enable_timing=True)
+            if "model" not in context.timer_events:
+                context.timer_events["model"] = (
+                    torch.cuda.Event(enable_timing=True),
+                    torch.cuda.Event(enable_timing=True),
+                )
+            start_event, end_event = context.timer_events["model"]
             torch.cuda.synchronize()
             start_event.record()
             model.backbone(data)
@@ -306,13 +332,14 @@ def run_jamma_pair(
 
     result = data
     result.pop("prev_data", None)
+    state = _det_state(result) if use_det else None
     return PairMatchOutput(
         mkpts0=result["mkpts0_f_origin"],
         mkpts1=result["mkpts1_f_origin"],
         confidence=result.get("mconf_f"),
         flops=context.flops_cache[flops_key],
         model_runtime_ms=model_runtime_ms,
-        state=result,
+        state=state,
     )
 
 
@@ -335,13 +362,38 @@ def _to_numpy(value: Any) -> np.ndarray:
 
 
 def _prepare_matches(output: PairMatchOutput, topk: int) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], int]:
+    if torch.is_tensor(output.mkpts0) and torch.is_tensor(output.mkpts1):
+        mk0_t = output.mkpts0.detach()
+        mk1_t = output.mkpts1.detach()
+        conf_t = output.confidence.detach() if torch.is_tensor(output.confidence) else None
+        n_raw = int(mk0_t.shape[0])
+
+        if conf_t is not None and conf_t.numel() == n_raw and topk > 0 and n_raw > topk:
+            keep = torch.topk(conf_t, topk, dim=0, sorted=True).indices
+            mk0_t = mk0_t.index_select(0, keep)
+            mk1_t = mk1_t.index_select(0, keep)
+            conf_t = conf_t.index_select(0, keep)
+        elif topk > 0 and n_raw > topk:
+            mk0_t = mk0_t[:topk]
+            mk1_t = mk1_t[:topk]
+            if conf_t is not None:
+                conf_t = conf_t[:topk]
+
+        mk0 = mk0_t.detach().cpu().numpy().astype(np.float32, copy=False).reshape(-1, 2)
+        mk1 = mk1_t.detach().cpu().numpy().astype(np.float32, copy=False).reshape(-1, 2)
+        conf = None
+        if conf_t is not None:
+            conf = conf_t.detach().cpu().numpy().astype(np.float32, copy=False).reshape(-1)
+        return mk0, mk1, conf, n_raw
+
     mk0 = _to_numpy(output.mkpts0).astype(np.float64).reshape(-1, 2)
     mk1 = _to_numpy(output.mkpts1).astype(np.float64).reshape(-1, 2)
     conf = None if output.confidence is None else _to_numpy(output.confidence).astype(np.float64).reshape(-1)
     n_raw = int(mk0.shape[0])
 
-    if conf is not None and conf.size == n_raw and topk > 0:
-        keep = np.argsort(-conf)[: min(topk, n_raw)]
+    if conf is not None and conf.size == n_raw and topk > 0 and n_raw > topk:
+        keep = np.argpartition(-conf, topk - 1)[:topk]
+        keep = keep[np.argsort(-conf[keep])]
         mk0 = mk0[keep]
         mk1 = mk1[keep]
         conf = conf[keep]
@@ -421,12 +473,28 @@ def _link_nearest(
 
     if prev_points is not None and prev_points.shape[0] > 0:
         used = np.zeros(mk0.shape[0], dtype=bool)
-        for prev_idx, prev_point in enumerate(prev_points):
-            if mk0.shape[0] == 0:
-                break
-            d2 = np.sum((mk0 - prev_point[None, :]) ** 2, axis=1)
-            match_idx = int(np.argmin(d2))
-            if used[match_idx] or float(d2[match_idx]) > max_d2:
+        if mk0.shape[0] > 0 and cKDTree is not None:
+            distances, nearest = cKDTree(mk0).query(prev_points, k=1, distance_upper_bound=radius)
+            candidate_prev = np.flatnonzero(nearest < mk0.shape[0])
+        else:
+            distances = None
+            nearest = None
+            candidate_prev = range(prev_points.shape[0])
+
+        for prev_idx in candidate_prev:
+            if nearest is None:
+                if mk0.shape[0] == 0:
+                    break
+                d2 = np.sum((mk0 - prev_points[prev_idx][None, :]) ** 2, axis=1)
+                match_idx = int(np.argmin(d2))
+                if float(d2[match_idx]) > max_d2:
+                    continue
+            else:
+                match_idx = int(nearest[prev_idx])
+                if float(distances[prev_idx] * distances[prev_idx]) > max_d2:
+                    continue
+
+            if used[match_idx]:
                 continue
 
             used[match_idx] = True
@@ -472,7 +540,12 @@ def evaluate_bag(
         raise ValueError(f"{bag_file}: expected {args.bag_size} paths, got {len(rel_paths)}")
 
     img_paths = [dataset_root / rel_path for rel_path in rel_paths]
-    cameras = [load_cam_from_dir(calib_dir, img_path, args.flip_w2c) for img_path in img_paths]
+    camera_key = (str(calib_dir), str(bag_file), bool(args.flip_w2c))
+    if camera_key not in context.camera_cache:
+        context.camera_cache[camera_key] = [
+            load_cam_from_dir(calib_dir, img_path, args.flip_w2c) for img_path in img_paths
+        ]
+    cameras = context.camera_cache[camera_key]
 
     tracks: Dict[int, Dict[str, Any]] = {}
     next_tid = 0
@@ -634,7 +707,16 @@ def run_tracking_evaluation(
         available = ", ".join(sorted(PAIR_MATCHERS.keys()))
         raise ValueError(f"Unknown method(s): {unknown}. Available methods: {available}")
 
-    context = EvalContext(args=args, device=device, models={}, configs={}, flops_cache={})
+    context = EvalContext(
+        args=args,
+        device=device,
+        models={},
+        configs={},
+        flops_cache={},
+        warmup_cache={},
+        timer_events={},
+        camera_cache={},
+    )
     bag_files = find_bag_files(subset_dir, args.bag_size)
     results: Dict[str, Dict[str, Any]] = {}
 
