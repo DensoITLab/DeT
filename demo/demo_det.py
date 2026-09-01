@@ -525,6 +525,7 @@ def build_row(
     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     visible_track_ids = selected_track_ids[:max_tracks]
+    focus_track_id = int(zoom_region["track_id"]) if zoom_region is not None else None
     for track_id in visible_track_ids:
         if track_id >= len(tracks):
             continue
@@ -536,8 +537,12 @@ def build_row(
 
         if len(points) > 1:
             draw.line(points, fill=(*TRACK_COLOR, max(0, min(255, line_alpha))), width=max(1, line_width))
+        is_focus_track = focus_track_id is not None and track_id == focus_track_id
+        point_color = FOCUS_POINT_COLOR if is_focus_track else TRACK_COLOR
+        point_draw_alpha = 255 if is_focus_track else point_alpha
+        point_draw_radius = point_radius + 1 if is_focus_track else point_radius
         for point in points:
-            draw_point(draw, point, TRACK_COLOR, point_radius, point_alpha)
+            draw_point(draw, point, point_color, point_draw_radius, point_draw_alpha)
 
     if zoom_box is not None and zoom_x is not None and zoom_y is not None:
         border = (*ZOOM_BORDER_COLOR, 230)
