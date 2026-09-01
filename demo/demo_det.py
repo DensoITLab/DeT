@@ -29,6 +29,7 @@ TRACK_PALETTE = [
     (44, 118, 111),
 ]
 POINT_OUTLINE_COLOR = (3, 24, 24)
+ZOOM_BORDER_COLOR = (0, 126, 128)
 
 from src.config.default import get_cfg_defaults
 from src.jamma.backbone import CovNextV2_nano
@@ -144,6 +145,9 @@ def parse_args():
     parser.add_argument("--line_alpha", type=int, default=120)
     parser.add_argument("--point_radius", type=int, default=3)
     parser.add_argument("--point_alpha", type=int, default=210)
+    parser.add_argument("--zoom_frame", type=int, default=2)
+    parser.add_argument("--zoom_window_size", type=int, default=320)
+    parser.add_argument("--zoom_crop_size", type=float, default=96.0)
     parser.add_argument("--track_spacing", type=float, default=10.0)
     parser.add_argument("--label_font_size", type=int, default=28)
     parser.add_argument("--device", type=str, default="cuda")
@@ -325,6 +329,35 @@ def color_for(index: int):
     return TRACK_PALETTE[index % len(TRACK_PALETTE)]
 
 
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def point_for_frame(track: Dict, frame_index: int) -> Optional[np.ndarray]:
+    for frame, point in zip(track["frames"], track["points"]):
+        if frame == frame_index:
+            return np.asarray(point, dtype=np.float32)
+    return None
+
+
+def draw_point(
+    draw: ImageDraw.ImageDraw,
+    point: Tuple[float, float],
+    color: Tuple[int, int, int],
+    radius: int,
+    alpha: int,
+) -> None:
+    px, py = point
+    radius = max(1, int(radius))
+    fill_alpha = max(0, min(255, int(alpha)))
+    outline_alpha = max(0, min(255, int(alpha) + 30))
+    draw.ellipse(
+        (px - radius, py - radius, px + radius, py + radius),
+        fill=(*color, fill_alpha),
+        outline=(*POINT_OUTLINE_COLOR, outline_alpha),
+    )
+
+
 def starts_from_first_pair(track: Dict) -> bool:
     return len(track["frames"]) >= 2 and track["frames"][0] == 0 and track["frames"][1] == 1
 
@@ -370,6 +403,60 @@ def select_common_start_track_ids(
     return selected
 
 
+def select_zoom_region(
+    nn_tracks: List[Dict],
+    det_tracks: List[Dict],
+    common_start_count: int,
+    frame_index: int,
+    base_crop_size: float,
+) -> Optional[Dict]:
+    best_track_id = None
+    best_gap = -1.0
+    best_nn_point = None
+    best_det_point = None
+    count = min(common_start_count, len(nn_tracks), len(det_tracks))
+
+    for track_id in range(count):
+        nn_track = nn_tracks[track_id]
+        det_track = det_tracks[track_id]
+        if not starts_from_first_pair(nn_track) or not starts_from_first_pair(det_track):
+            continue
+
+        nn_point = point_for_frame(nn_track, frame_index)
+        det_point = point_for_frame(det_track, frame_index)
+        if nn_point is None or det_point is None:
+            continue
+
+        gap = float(np.linalg.norm(nn_point - det_point))
+        if not np.isfinite(gap) or gap <= best_gap:
+            continue
+
+        best_track_id = track_id
+        best_gap = gap
+        best_nn_point = nn_point
+        best_det_point = det_point
+
+    if best_track_id is None or best_nn_point is None or best_det_point is None:
+        return None
+
+    center = (best_nn_point + best_det_point) * 0.5
+    crop_size = max(float(base_crop_size), best_gap + float(base_crop_size) * 0.75)
+    return {
+        "frame": frame_index,
+        "track_id": best_track_id,
+        "center": center.tolist(),
+        "crop_size": crop_size,
+        "gap": best_gap,
+    }
+
+
+def crop_box_for(image: Image.Image, center: List[float], crop_size: float) -> Tuple[int, int, int, int]:
+    size = int(round(max(2.0, min(float(crop_size), float(image.width), float(image.height)))))
+    left = int(round(clamp(float(center[0]) - size * 0.5, 0, image.width - size)))
+    top = int(round(clamp(float(center[1]) - size * 0.5, 0, image.height - size)))
+    return left, top, left + size, top + size
+
+
 def load_label_font(size: int):
     for name in ("arialbd.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf"):
         try:
@@ -391,6 +478,8 @@ def build_row(
     line_alpha: int,
     point_radius: int,
     point_alpha: int,
+    zoom_region: Optional[Dict],
+    zoom_window_size: int,
     label_font_size: int,
 ) -> Image.Image:
     images = [Image.open(path).convert("RGB") for path in image_paths]
@@ -403,19 +492,50 @@ def build_row(
         scaled.append(image.resize(size, Image.Resampling.LANCZOS))
         scales.append((scale, scale))
 
+    zoom_frame = None
+    zoom_size = 0
+    zoom_x = None
+    zoom_y = None
+    zoom_box = None
+    zoom_point = None
+    if zoom_region is not None and zoom_window_size > 0:
+        zoom_frame = int(zoom_region["frame"])
+        if 0 <= zoom_frame < len(images):
+            zoom_size = min(viz_height, max(64, int(zoom_window_size)))
+
     offsets = []
     x = 0
-    for image in scaled:
+    for frame_index, image in enumerate(scaled):
         offsets.append(x)
         x += image.width
+        if zoom_size > 0 and frame_index == zoom_frame:
+            x += max(8, int(viz_height * 0.025))
+            zoom_x = x
+            x += zoom_size
+
+    if zoom_size > 0 and zoom_frame is not None and zoom_x is not None:
+        zoom_track_id = int(zoom_region["track_id"])
+        zoom_track = tracks[zoom_track_id] if zoom_track_id < len(tracks) else None
+        if zoom_track is not None:
+            zoom_point = point_for_frame(zoom_track, zoom_frame)
+        if zoom_point is not None:
+            zoom_y_float = zoom_point[1] * scales[zoom_frame][1] - zoom_size * 0.5
+        else:
+            zoom_y_float = (viz_height - zoom_size) * 0.5
+        zoom_y = int(round(clamp(zoom_y_float, 0, viz_height - zoom_size)))
+        zoom_box = crop_box_for(images[zoom_frame], zoom_region["center"], zoom_region["crop_size"])
 
     canvas = Image.new("RGBA", (x, viz_height), (0, 0, 0, 255))
     for image, xoff in zip(scaled, offsets):
         canvas.paste(image.convert("RGBA"), (xoff, 0))
+    if zoom_box is not None and zoom_x is not None and zoom_y is not None:
+        zoom_source = images[zoom_frame].crop(zoom_box).resize((zoom_size, zoom_size), Image.Resampling.LANCZOS)
+        canvas.paste(zoom_source.convert("RGBA"), (zoom_x, zoom_y))
 
     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    for draw_idx, track_id in enumerate(selected_track_ids[:max_tracks]):
+    visible_track_ids = selected_track_ids[:max_tracks]
+    for draw_idx, track_id in enumerate(visible_track_ids):
         if track_id >= len(tracks):
             continue
         track = tracks[track_id]
@@ -427,15 +547,47 @@ def build_row(
         color = color_for(draw_idx)
         if len(points) > 1:
             draw.line(points, fill=(*color, max(0, min(255, line_alpha))), width=max(1, line_width))
-        radius = max(1, point_radius)
-        fill_alpha = max(0, min(255, point_alpha))
-        outline_alpha = max(0, min(255, point_alpha + 30))
-        for px, py in points:
-            draw.ellipse(
-                (px - radius, py - radius, px + radius, py + radius),
-                fill=(*color, fill_alpha),
-                outline=(*POINT_OUTLINE_COLOR, outline_alpha),
+        for point in points:
+            draw_point(draw, point, color, point_radius, point_alpha)
+
+    if zoom_box is not None and zoom_x is not None and zoom_y is not None:
+        border = (*ZOOM_BORDER_COLOR, 230)
+        line_width_zoom = max(2, line_width + 1)
+        sx, sy = scales[zoom_frame]
+        left, top, right, bottom = zoom_box
+        src_box = (
+            offsets[zoom_frame] + left * sx,
+            top * sy,
+            offsets[zoom_frame] + right * sx,
+            bottom * sy,
+        )
+        dst_box = (zoom_x, zoom_y, zoom_x + zoom_size, zoom_y + zoom_size)
+        draw.rectangle(src_box, outline=border, width=line_width_zoom)
+        draw.rectangle(dst_box, outline=border, width=line_width_zoom)
+        draw.line(
+            (src_box[2], src_box[1], dst_box[0], dst_box[1]),
+            fill=(*ZOOM_BORDER_COLOR, 180),
+            width=line_width_zoom,
+        )
+        draw.line(
+            (src_box[2], src_box[3], dst_box[0], dst_box[3]),
+            fill=(*ZOOM_BORDER_COLOR, 180),
+            width=line_width_zoom,
+        )
+
+        zoom_track_id = int(zoom_region["track_id"])
+        zoom_color_idx = visible_track_ids.index(zoom_track_id) if zoom_track_id in visible_track_ids else 0
+        zoom_color = color_for(zoom_color_idx)
+        if zoom_point is not None:
+            main_point = (offsets[zoom_frame] + zoom_point[0] * sx, zoom_point[1] * sy)
+            draw_point(draw, main_point, zoom_color, point_radius + 2, 255)
+            crop_width = max(1, right - left)
+            crop_height = max(1, bottom - top)
+            inset_point = (
+                zoom_x + (zoom_point[0] - left) * zoom_size / crop_width,
+                zoom_y + (zoom_point[1] - top) * zoom_size / crop_height,
             )
+            draw_point(draw, inset_point, zoom_color, max(point_radius * 2, 6), 255)
 
     canvas = Image.alpha_composite(canvas, overlay)
     label_draw = ImageDraw.Draw(canvas)
@@ -461,9 +613,12 @@ def draw_comparison(
     line_alpha: int,
     point_radius: int,
     point_alpha: int,
+    zoom_frame: int,
+    zoom_window_size: int,
+    zoom_crop_size: float,
     track_spacing: float,
     label_font_size: int,
-) -> List[int]:
+) -> Tuple[List[int], Optional[Dict]]:
     selected_track_ids = select_common_start_track_ids(
         nn_tracks,
         det_tracks,
@@ -471,13 +626,25 @@ def draw_comparison(
         max_tracks,
         track_spacing,
     )
+    zoom_region = select_zoom_region(
+        nn_tracks,
+        det_tracks,
+        common_start_count,
+        zoom_frame,
+        zoom_crop_size,
+    )
+    if zoom_region is not None and int(zoom_region["track_id"]) not in selected_track_ids:
+        selected_track_ids = [int(zoom_region["track_id"])] + selected_track_ids
+    selected_track_ids = selected_track_ids[:max_tracks]
     nn_row = build_row(
         image_paths, nn_tracks, "NN-JamMa", (255, 255, 255), selected_track_ids,
-        max_tracks, viz_height, line_width, line_alpha, point_radius, point_alpha, label_font_size
+        max_tracks, viz_height, line_width, line_alpha, point_radius, point_alpha,
+        zoom_region, zoom_window_size, label_font_size
     )
     det_row = build_row(
         image_paths, det_tracks, "DeT-JamMa", (255, 205, 0), selected_track_ids,
-        max_tracks, viz_height, line_width, line_alpha, point_radius, point_alpha, label_font_size
+        max_tracks, viz_height, line_width, line_alpha, point_radius, point_alpha,
+        zoom_region, zoom_window_size, label_font_size
     )
 
     gap = max(10, int(viz_height * 0.08))
@@ -488,7 +655,7 @@ def draw_comparison(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out_path)
-    return selected_track_ids
+    return selected_track_ids, zoom_region
 
 
 def main():
@@ -518,7 +685,7 @@ def main():
         common_start_count = min(len(nn_pair_results[0]["mkpts0"]), len(det_pair_results[0]["mkpts0"]))
 
     comparison_path = args.output_dir / "comparison.png"
-    selected_track_ids = draw_comparison(
+    selected_track_ids, zoom_region = draw_comparison(
         image_paths,
         nn_tracks,
         det_tracks,
@@ -530,6 +697,9 @@ def main():
         args.line_alpha,
         args.point_radius,
         args.point_alpha,
+        args.zoom_frame,
+        args.zoom_window_size,
+        args.zoom_crop_size,
         args.track_spacing,
         args.label_font_size,
     )
@@ -539,6 +709,7 @@ def main():
         "visualization": {
             "common_start_count": common_start_count,
             "selected_track_ids": selected_track_ids,
+            "zoom_region": zoom_region,
         },
         "methods": {
             "nn-jamma": {

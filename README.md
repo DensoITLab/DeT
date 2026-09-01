@@ -68,8 +68,8 @@ python demo/demo_det.py \
   --ckpt_path /path/to/det.ckpt
 ```
 
-The demo writes `tracks.json` and `comparison.png` under the output directory. The comparison figure shows NN-JamMa on top and DeT-JamMa on the bottom, using the same sampled start tracks from the shared 0-1 matches.
-The default visualization uses a 720 px row height. Use `--viz_height`, `--label_font_size`, `--point_radius`, `--point_alpha`, and `--max_viz_tracks` to adjust the comparison figure.
+The demo writes `tracks.json` and `comparison.png` under the output directory. The comparison figure shows NN-JamMa on top and DeT-JamMa on the bottom, using the same sampled start tracks from the shared 0-1 matches. It adds a zoom window after the third image for the common track with the largest NN/DeT displacement on that frame.
+The default visualization uses a 720 px row height. Use `--viz_height`, `--label_font_size`, `--point_radius`, `--point_alpha`, `--zoom_window_size`, `--zoom_crop_size`, and `--max_viz_tracks` to adjust the comparison figure.
 
 ## Paper Evaluation
 
