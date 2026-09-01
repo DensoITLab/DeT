@@ -1,10 +1,12 @@
 from yacs.config import CfgNode as CN
+
 _CN = CN()
 
-##############  ↓  JAMMA Pipeline  ↓  ##############
+# JamMa pipeline
 _CN.JAMMA = CN()
 _CN.JAMMA.RESOLUTION = (8, 2)  # options: [(8, 2), (16, 4)]
 _CN.JAMMA.FINE_WINDOW_SIZE = 5  # window_size in fine_level, must be odd
+_CN.JAMMA.USE_COMPILE = False
 
 _CN.JAMMA.COARSE = CN()
 _CN.JAMMA.COARSE.D_MODEL = 256

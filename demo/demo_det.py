@@ -14,6 +14,11 @@ from loguru import logger
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.config.default import get_cfg_defaults
+from src.jamma.backbone import CovNextV2_nano
+from src.jamma.jamma import JamMa
+
 DEFAULT_IMAGE_PATHS = [
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_06795901_3725050516.jpg",
     PROJECT_ROOT / "assets" / "phototourism_sample_images" / "piazza_san_marco_15148634_5228701572.jpg",
@@ -25,10 +30,6 @@ NN_FOCUS_COLOR = (0, 176, 82)
 DET_FOCUS_COLOR = (226, 63, 48)
 POINT_OUTLINE_COLOR = (3, 24, 24)
 ZOOM_BORDER_COLOR = (42, 99, 176)
-
-from src.config.default import get_cfg_defaults
-from src.jamma.backbone import CovNextV2_nano
-from src.jamma.jamma import JamMa
 
 
 class JamMaDemoMatcher(torch.nn.Module):
@@ -239,7 +240,7 @@ def run_sequence(model: JamMaDemoMatcher, image_paths: List[Path], args, device,
             data["prev_data"] = prev_data
 
         logger.info(f"{label}: {image_paths[idx]} -> {image_paths[idx + 1]}")
-        with torch.no_grad():
+        with torch.inference_mode():
             model(data)
 
         data.pop("prev_data", None)
@@ -686,7 +687,10 @@ def main():
     args.main_cfg_path = str(resolve_input_path(args.main_cfg_path))
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device(args.device if args.device == "cuda" and torch.cuda.is_available() else "cpu")
+    requested_device = torch.device(args.device)
+    device = requested_device
+    if requested_device.type == "cuda" and not torch.cuda.is_available():
+        device = torch.device("cpu")
     logger.info(f"device={device}")
 
     nn_model = JamMaDemoMatcher(build_config(args, use_det=False), args.ckpt_path).to(device).eval()
@@ -727,7 +731,7 @@ def main():
 
     payload = {
         "images": [str(path) for path in image_paths],
-        "visualization": {
+        "comparison": {
             "common_start_count": common_start_count,
             "selected_track_ids": selected_track_ids,
             "zoom_region": zoom_region,
@@ -763,7 +767,7 @@ def main():
     logger.info(f"Saved: {comparison_path}")
     logger.info(
         f"tracks: nn-jamma={len(nn_tracks)}, det-jamma={len(det_tracks)}, "
-        f"visualized_common_starts={len(selected_track_ids)}"
+        f"common_tracks={len(selected_track_ids)}"
     )
 
 

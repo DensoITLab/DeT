@@ -1,16 +1,17 @@
-import numpy as np
+from typing import Any, Tuple
+
 import torch
 from torch import nn
 import torch.nn.functional as F
 from einops.einops import rearrange
 
+from src.jamma.compile_utils import maybe_compile
 from src.jamma.utils.utils import (
     KeypointEncoder_wo_score,
     up_conv4,
     MLPMixerEncoderLayer,
     normalize_keypoints,
 )
-from src.jamma.compile_utils import maybe_compile
 from src.jamma.mamba_module import JointMamba
 from src.jamma.matching_module import CoarseMatching, FineSubMatching
 from src.utils.profiler import PassThroughProfiler
@@ -30,70 +31,37 @@ def _get_base_grid(device, dtype):
         xs = torch.arange(1, 6, device=device, dtype=dtype)
         ys = torch.arange(1, 6, device=device, dtype=dtype)
         yy, xx = torch.meshgrid(ys, xs, indexing="ij")
-        base = torch.stack((xx / 3 - 1, yy / 3 - 1), dim=-1)  # [5,5,2]
+        base = torch.stack((xx / 3 - 1, yy / 3 - 1), dim=-1)
         _BASE_GRID_CACHE[key] = base
     return _BASE_GRID_CACHE[key]
 
 
 @maybe_compile
 def _project_7x7_to_5x5(inputs: torch.Tensor, offsets: torch.Tensor) -> torch.Tensor:
-    """Project 7x7 local feature patches into 5x5 patches with an offset.
-
-    Args:
-        inputs: [B, 49, C] feature patches (7x7 flattened).
-        offsets: [B, 2] sub-pixel offsets (x, y) in pixel space.
-
-    Returns:
-        [B, 25, C] feature patches (5x5 flattened).
-    """
+    """Project 7x7 local feature patches into offset 5x5 patches."""
     B, HW, C = inputs.shape
     assert HW == 49, f"Expected 49 (=7x7), got {HW}"
     assert offsets.shape == (B, 2), f"offsets should be (B, 2), got {offsets.shape}"
 
-    # [B, 49, C] -> [B, C, 7, 7]
     x = inputs.permute(0, 2, 1).reshape(B, C, 7, 7)
-    device = x.device
-
-    # base 5x5 grid in normalized coordinates (-1..1).
-
-    # convert pixel offsets to normalized coordinate offsets and add to base grid
-
-    base = _get_base_grid(device=device, dtype=x.dtype)  # [5,5,2]
+    base = _get_base_grid(device=x.device, dtype=x.dtype)
     grid = base.unsqueeze(0) + (offsets.view(B, 1, 1, 2) / 3)
-
-
     grid = grid.to(x.dtype)
-
-    # sample features using bilinear sampling
-    y = F.grid_sample(x, grid, align_corners=True, padding_mode="zeros")  # [B, C, 5, 5]
-
-    # [B, C, 5, 5] -> [B, 25, C]
+    y = F.grid_sample(x, grid, align_corners=True, padding_mode="zeros")
     y = y.flatten(2).permute(0, 2, 1).contiguous()
     return y
 
 
 def _flat_idx_from_xy(
     xy: torch.Tensor,
-    x_min: int,
-    y_min: int,
-    x_max: int,
-    y_max: int,
+    x_min: Any,
+    y_min: Any,
+    x_max: Any,
+    y_max: Any,
     width: int = 416,
     height: int = 416,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Convert (x, y) coordinates to flattened indices with boundary filtering.
-
-    Args:
-        xy: (..., 2) coordinates [x, y].
-        x_min, y_min, x_max, y_max: valid coordinate bounds (inclusive).
-        width: image width (default 416).
-        height: image height (default 416).
-
-    Returns:
-        idx: [K] flattened indices (within bounds).
-        xy_valid: [K, 2] filtered coordinates.
-        mask: boolean mask over input xy marking valid entries.
-    """
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Convert xy coordinates to flattened indices with boundary filtering."""
     xy = xy.round().long()
     mask = (
         (xy[..., 0] >= x_min)
@@ -111,29 +79,14 @@ def _flat_idx_from_xy(
     return idx, xy_valid, mask
 
 
-def _check_idx(name: str, idx: torch.Tensor, size: int) -> None:
-    """Sanity-check index tensor (dtype & range)."""
-    assert idx.dtype == torch.long, f"{name}: dtype must be long"
-    if idx.numel():
-        mn = int(idx.min().item())
-        mx = int(idx.max().item())
-        assert 0 <= mn <= mx < size, f"{name}: range [{mn}, {mx}] out of [0, {size - 1}]"
-
 def _search_nearest_pt_torch(
-    prev_points: torch.Tensor,   # [N, 2]
-    now_points: torch.Tensor,    # [M, 2]
-    now_confs: torch.Tensor,     # [M]
+    prev_points: torch.Tensor,
+    now_points: torch.Tensor,
+    now_confs: torch.Tensor,
     max_dist: float = 5 * 2**0.5,
     lambda_dist: float = 1.0,
-):
-    """
-    ...
-    Returns:
-        now_id_list: indices into now_points for valid matches
-        valid_index: indices into prev_points that obtained a match
-        matched_confs: confidence values of matched now_points [len(now_id_list)]
-    """
-
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Link previous track points to current pair matches with a full distance search."""
     if prev_points.numel() == 0 or now_points.numel() == 0:
         empty_idx = torch.empty(0, dtype=torch.long, device=prev_points.device)
         empty_conf = now_confs.new_empty(0)
@@ -162,31 +115,20 @@ class DetRefine(nn.Module):
 
     def forward(
         self,
-        # previous frame info
-        prev_kpts1,           # [N,2]
-        prev_subref1,         # [N,2]
-        prev_f1_2_center,     # [N,2]
-        prev_m_bids,          # [N]
-
-        # current frame info (sorted by conf)
-        mkpts0_f,             # [M,2]
-        mkpts1_f,             # [M,2]
-        mconf_f_sorted,       # [M]
-
-        # 7x7 unfold patches (stride=1) from image0 & image1
-        feat_f0_unfold_st1,   # [B, L0, 49, Cf]
-        feat_f1_unfold_st1,   # [B, L1, W^2, Cf]
-
-        # bounds for _flat_idx_from_xy (computed outside)
-        x_min, y_min, x_max, y_max
+        prev_kpts1,
+        prev_subref1,
+        prev_f1_2_center,
+        prev_m_bids,
+        mkpts0_f,
+        mkpts1_f,
+        mconf_f_sorted,
+        feat_f0_unfold_st1,
+        feat_f1_unfold_st1,
+        x_min,
+        y_min,
+        x_max,
+        y_max,
     ):
-        """
-        This is a pure Tensor-level implementation of the refinement block.
-        """
-
-        # -----------------------------
-        # 1) previous centers → index in 1/2-res grid
-        # -----------------------------
         idx0, prev_c0, mask0 = _flat_idx_from_xy(
             prev_f1_2_center, x_min, y_min, x_max, y_max
         )
@@ -194,9 +136,6 @@ class DetRefine(nn.Module):
         prev_subref1 = prev_subref1[mask0]
         prev_m_bids = prev_m_bids[mask0]
 
-        # -----------------------------
-        # 2) nearest-neighbor search prev → now
-        # -----------------------------
         now_id_list, valid_index, matched_confs = _search_nearest_pt_torch(
             prev_kpts1, mkpts0_f, mconf_f_sorted, max_dist=self.search_radius
         )
@@ -206,34 +145,24 @@ class DetRefine(nn.Module):
         diff = (mk1_sel - mk0_sel) * 0.5
         diff_int = torch.round(diff).to(torch.int)
 
-        # -----------------------------
-        # 3) refine previous coarse centers
-        # -----------------------------
         prev_c0 = prev_c0[valid_index]
         prev_subref1 = prev_subref1[valid_index]
         prev_m_bids = prev_m_bids[valid_index]
 
-        mk1_2_center = prev_c0 + diff_int  # new centers
-
-        # -----------------------------
-        # 4) compute valid bounds from mkpts1_f
-        # -----------------------------
+        mk1_2_center = prev_c0 + diff_int
 
         xy = mkpts1_f // 2
-        x2_min = xy[:,0].min()
-        y2_min = xy[:,1].min()
-        x2_max = xy[:,0].max()
-        y2_max = xy[:,1].max()
+        x2_min = xy[:, 0].min()
+        y2_min = xy[:, 1].min()
+        x2_max = xy[:, 0].max()
+        y2_max = xy[:, 1].max()
 
-        idx1, new_c1, mask1 = _flat_idx_from_xy(
+        idx1, _, mask1 = _flat_idx_from_xy(
             mk1_2_center,
             x2_min, y2_min,
             x2_max, y2_max,
         )
 
-        # mask both sides
-
-        
         idx0 = idx0[valid_index][mask1]
         prev_m_bids = prev_m_bids[mask1]
         matched_confs = matched_confs[mask1]
@@ -242,28 +171,20 @@ class DetRefine(nn.Module):
         mk1_sel = mk1_sel[mask1]
         prev_subref1_sel = prev_subref1[mask1]
 
-        # -----------------------------
-        # 5) gather new 7x7 patches
-        # -----------------------------
-        feat0 = feat_f0_unfold_st1[prev_m_bids, idx0.long()]  # [K,49,C]
-        feat1 = feat_f1_unfold_st1[prev_m_bids, idx1.long()]  # [K,W^2,C]
-
-        # -----------------------------
-        # 6) re-center 7x7 → 5x5
-        # -----------------------------
+        feat0 = feat_f0_unfold_st1[prev_m_bids, idx0.long()]
+        feat1 = feat_f1_unfold_st1[prev_m_bids, idx1.long()]
         feat0_5x5 = _project_7x7_to_5x5(feat0, prev_subref1_sel)
 
         return (
-            diff * 2,               # original-resolution displacement
-            mk0_sel, mk1_sel,       # refined matching points
-            matched_confs,          # confidence of matched refined pairs
-            prev_m_bids,            # batch ids
-            idx0.long(), idx1.long(),  # i_ids / j_ids
-            prev_subref1_sel,       # sub-pixel offsets
+            diff * 2,
+            mk0_sel, mk1_sel,
+            matched_confs,
+            prev_m_bids,
+            idx0.long(), idx1.long(),
+            prev_subref1_sel,
             feat0_5x5,
             feat1,
         )
-
 
 
 class JamMa(nn.Module):
@@ -381,7 +302,7 @@ class JamMa(nn.Module):
     @maybe_compile
     def fine_preprocess(
         self, data: dict, profiler: PassThroughProfiler
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Prepare fine-level features and windows for matching.
 
         Returns:
@@ -514,8 +435,6 @@ class JamMa(nn.Module):
                         - 2
                     )
 
-
-                    # sort current matches by confidence
                     sort_idx = torch.topk(
                         data["mconf_f"], len(data["mconf_f"]), dim=0
                     ).indices
@@ -545,9 +464,11 @@ class JamMa(nn.Module):
                         now_confs_sorted,
                         data["feat_f0_unfold_st1"],
                         data["feat_f1_unfold_st1"],
-                        3,3,413,413,  # bounds for previous coarse centers
+                        3,
+                        3,
+                        413,
+                        413,
                     )
-
 
                     feat_f_flex = torch.cat(
                         [feat_f0_unfold_flex, feat_f1_unfold_flex], dim=1

@@ -10,7 +10,6 @@ from matplotlib import cm
 import matplotlib.patheffects as path_effects
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
-from scipy.spatial import cKDTree
 imagenet_mean = torch.tensor([0.485, 0.456, 0.406])
 imagenet_std = torch.tensor([0.229, 0.224, 0.225])
 
@@ -1553,7 +1552,6 @@ def make_confidence_figure_track(data_01, data_12, data_23, data_34, data_45, da
     if is_origin_img:
         import torch.nn.functional as F
         from torchvision import transforms
-        # calra 1280 800 → 832 560
         origin_whs = origin_wh
         new_whs = new_wh
         assert len(origin_whs) == len(new_whs)
@@ -2092,7 +2090,6 @@ def make_confidence_figure_track_compare(data_01, data_02, data_03, data_04, dat
     if is_origin_img:
         import torch.nn.functional as F
         from torchvision import transforms
-        # calra 1280 800 → 832 560
         def _restore_img(img, mask):
             img = np.clip(img * 255, 0, 255).astype(np.uint8)
             img = img[F.interpolate(mask.unsqueeze(0).float(), mode='nearest', size=(832, 832))[0,0].bool().cpu().numpy().astype(bool)].reshape(new_wh[1], new_wh[0], 3)

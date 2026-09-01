@@ -13,7 +13,7 @@ DeT makes detector-free matching trackable across multiple views by steering the
 - NN-JamMa and DeT-JamMa pair matching adapters for tracking evaluation.
 
 Checkpoints, datasets, logs, and generated evaluation files are intentionally excluded from Git. Some internal module names and config keys still use `jamma` for compatibility with the upstream JamMa code structure.
-Only the upstream JamMa files needed for DeT inference and evaluation are kept in the tree; the public DeT demo entry point is `demo/demo_det.py`.
+The public DeT demo entry point is `demo/demo_det.py`.
 
 ## Installation
 
@@ -35,7 +35,7 @@ python demo/demo_det.py
 ```
 
 By default, the demo reads `weights/jamma.ckpt` and the first three Piazza San Marco images under `assets/phototourism_sample_images`.
-The paper tracking evaluation scripts use `--ckpt_path`:
+The tracking evaluation entry points use `--ckpt_path`:
 
 ```bash
 python -m eval.eval_imc --ckpt_path weights/jamma.ckpt
@@ -74,7 +74,7 @@ The default comparison figure uses a 720 px row height. Use `--viz_height`, `--l
 
 ## Paper Evaluation
 
-The paper evaluation scripts run 5-frame bags for IMC and MegaDepth.
+The paper evaluation entry points run 5-frame bags for IMC and MegaDepth.
 
 ```bash
 python -m eval.eval_imc --ckpt_path weights/jamma.ckpt
@@ -88,8 +88,8 @@ The evaluation entry points are:
 - `eval/eval_megadepth.py`: MegaDepth tracking metrics for the left and middle plots in Fig. 6.
 
 Default data locations are `../dataset/phototourism` and `../dataset/megadepth`. Override them with `--imc_root`, `--megadepth_root`, `--megadepth_sfm_root`, `--subset_dir`, `--dataset_root`, or `--calib_dir`. Results are written under `outputs/imc_tracking*.json` and `outputs/megadepth_tracking*.json`.
-The MegaDepth script also accepts `15` and `22` and normalizes them to `0015` and `0022`.
-The tracking scripts run `--methods nn-jamma det-jamma` by default. They report average correct tracks from frame 1 to frame 5 using symmetric epipolar error `< 1e-3`, average FLOPs per pair, and average model inference time per pair. FLOPs are profiled once per method state and reused instead of being measured for every image pair. The timing window covers only the model forward pass, not image loading, preprocessing, track linking, epipolar scoring, FLOPs profiling, or warmup.
+The MegaDepth entry point also accepts `15` and `22` and normalizes them to `0015` and `0022`.
+The tracking evaluation runs `--methods nn-jamma det-jamma` by default. It reports average correct tracks from frame 1 to frame 5 using symmetric epipolar error `< 1e-3`, average FLOPs per pair, and average model inference time per pair. FLOPs are profiled once per method state and reused instead of being measured for every image pair. The timing window covers only the model forward pass, not image loading, preprocessing, track linking, epipolar scoring, FLOPs profiling, or warmup.
 
 To add another tracker, add one decorated pair-matching function to `eval/eval_utils.py` that returns `PairMatchOutput`. The evaluator handles bag loading, track linking, epipolar scoring, FLOPs/time aggregation, and JSON output.
 
@@ -111,7 +111,7 @@ The `assets/` directory is copied from the upstream JamMa repository and is used
 
 ## Citation
 
-The camera-ready citation will be updated once the official metadata is public.
+If you use this code, please cite:
 
 ```bibtex
 @inproceedings{det2026,
