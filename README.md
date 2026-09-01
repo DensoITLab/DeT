@@ -1,16 +1,18 @@
-# DeT: Detect by Track
+# Detect by Track: Making Detector-Free Matcher Trackable
 
 [![license](https://img.shields.io/badge/LICENSE-MIT-green)](LICENSE)
-[![conference](https://img.shields.io/badge/ECCV-2026-blue)](https://eccv.ecva.net/)
+![conference](https://img.shields.io/badge/ECCV-2026-blue)
 [![base](https://img.shields.io/badge/base-JamMa-6f42c1)](https://github.com/leoluxxx/JamMa)
 
-Official PyTorch implementation of **Detect by Track: Making Detector-Free Matcher Trackable**.
+Yusuke Sekikawa, Hideki Shirai, Ruka Eto, Yuzhe Hao, Kengo Mitsui, Nakamasa Inoue
+
+Official PyTorch implementation for the ECCV 2026 paper **Detect by Track: Making Detector-Free Matcher Trackable**.
 
 DeT makes detector-free matching trackable across multiple views by steering the local similarity matrix from arbitrary sub-pixel query locations. This release implements DeT on top of [JamMa](https://github.com/leoluxxx/JamMa) and is intentionally scoped to:
 
 - DeT sequence demo with three or more ordered images.
-- Paper evaluation launch scripts for IMC and MegaDepth scenes 0015/0022.
-- IMC/MegaDepth multi-view tracking and online SfM evaluation.
+- Fig. 6 tracking evaluation for IMC and MegaDepth scenes 0015/0022.
+- NN-JamMa and DeT-JamMa pair matching adapters for tracking evaluation.
 
 Checkpoints, datasets, logs, and generated evaluation files are intentionally excluded from Git. Some internal module names and config keys still use `jamma` for compatibility with the upstream JamMa code structure.
 Only the upstream JamMa files needed for DeT inference and evaluation are kept in the tree; the public DeT demo entry point is `demo/demo_det.py`.
