@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from einops.einops import rearrange
 from loguru import logger
 
+from src.jamma.compile_utils import maybe_compile
+
 INF = 1e9
 
 
@@ -479,7 +481,7 @@ class FineSubMatching(nn.Module):
                     )
                 )
 
-    @torch.compile
+    @maybe_compile
     def get_fine_sub_match(
         self,
         conf_matrix_fine: torch.Tensor,
@@ -616,7 +618,7 @@ class FineSubMatching(nn.Module):
 
         return sub_pixel_matches
 
-    @torch.compile
+    @maybe_compile
     def get_fine_sub_match_det(
         self,
         conf_matrix_fine: torch.Tensor,

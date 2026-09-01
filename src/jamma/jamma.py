@@ -10,6 +10,7 @@ from src.jamma.utils.utils import (
     MLPMixerEncoderLayer,
     normalize_keypoints,
 )
+from src.jamma.compile_utils import maybe_compile
 from src.jamma.mamba_module import JointMamba
 from src.jamma.matching_module import CoarseMatching, FineSubMatching
 from src.utils.profiler import PassThroughProfiler
@@ -21,7 +22,8 @@ INF = 1e9
 
 _BASE_GRID_CACHE = {}
 
-@torch.compile
+
+@maybe_compile
 def _get_base_grid(device, dtype):
     key = (device, dtype)
     if key not in _BASE_GRID_CACHE:
@@ -32,7 +34,8 @@ def _get_base_grid(device, dtype):
         _BASE_GRID_CACHE[key] = base
     return _BASE_GRID_CACHE[key]
 
-@torch.compile
+
+@maybe_compile
 def _project_7x7_to_5x5(inputs: torch.Tensor, offsets: torch.Tensor) -> torch.Tensor:
     """Project 7x7 local feature patches into 5x5 patches with an offset.
 
@@ -134,11 +137,9 @@ def _search_nearest_pt_torch(
     if prev_points.numel() == 0 or now_points.numel() == 0:
         empty_idx = torch.empty(0, dtype=torch.long, device=prev_points.device)
         empty_conf = now_confs.new_empty(0)
-        return empty_idx, empty_idx, empty_conf, now_confs.new_tensor(0.0)
+        return empty_idx, empty_idx, empty_conf
 
     dists = torch.cdist(prev_points, now_points)
-    min_dists = dists.amin(dim=1)
-
     dists.mul_(-lambda_dist).add_(now_confs.unsqueeze(0))
     min_allowed = now_confs.unsqueeze(0) - float(lambda_dist * max_dist)
     dists.masked_fill_(dists < min_allowed, -INF)
@@ -150,10 +151,7 @@ def _search_nearest_pt_torch(
     valid_index = torch.nonzero(valid_mask, as_tuple=False).squeeze(1)
     matched_confs = now_confs[now_id_list]
 
-    count = valid_mask.sum().clamp_min(1)
-    valid_min_dists_mean = min_dists.masked_fill(~valid_mask, 0.0).sum() / count
-
-    return now_id_list, valid_index, matched_confs, valid_min_dists_mean
+    return now_id_list, valid_index, matched_confs
 
 
 class DetRefine(nn.Module):
@@ -199,7 +197,7 @@ class DetRefine(nn.Module):
         # -----------------------------
         # 2) nearest-neighbor search prev → now
         # -----------------------------
-        now_id_list, valid_index, matched_confs, valid_min_dists_mean = _search_nearest_pt_torch(
+        now_id_list, valid_index, matched_confs = _search_nearest_pt_torch(
             prev_kpts1, mkpts0_f, mconf_f_sorted, max_dist=self.search_radius
         )
         mk0_sel = mkpts0_f[now_id_list]
@@ -263,8 +261,7 @@ class DetRefine(nn.Module):
             idx0.long(), idx1.long(),  # i_ids / j_ids
             prev_subref1_sel,       # sub-pixel offsets
             feat0_5x5,
-            feat1,  
-            valid_min_dists_mean,   # average nearest neighbor distance for valid matches
+            feat1,
         )
 
 
@@ -316,7 +313,7 @@ class JamMa(nn.Module):
         )
 
     # ------------------------ Coarse Matching ------------------------ #
-    @torch.compile
+    @maybe_compile
     def coarse_match(self, data: dict) -> None:
         """Perform coarse-level feature interaction and matching."""
         desc0 = data["feat_8_0"].flatten(2, 3)
@@ -357,7 +354,7 @@ class JamMa(nn.Module):
             )
 
     # ------------------------ FPN Fusion ------------------------ #
-    @torch.compile
+    @maybe_compile
     def inter_fpn(self, feat_8: torch.Tensor, feat_4: torch.Tensor) -> torch.Tensor:
         """Intermediate FPN: merge 1/8 and 1/4 features then upsample to 1/2.
 
@@ -381,7 +378,7 @@ class JamMa(nn.Module):
 
     # ------------------------ Fine Preprocess ------------------------ #
 
-    @torch.compile
+    @maybe_compile
     def fine_preprocess(
         self, data: dict, profiler: PassThroughProfiler
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -538,7 +535,6 @@ class JamMa(nn.Module):
                         prev_subref1_sel,
                         feat_f0_unfold_flex,
                         feat_f1_unfold_flex,
-                        valid_min_dists_mean,
                     ) = self.detref(
                         prev_kpts1,
                         prev_subref1,
@@ -573,7 +569,6 @@ class JamMa(nn.Module):
                                 "1": mk1_sel,
                             },
                             "diff_points_conf": conf_sel,
-                            "diff_points_valid_mean_dist": valid_min_dists_mean,
                         }
                     )
                     data.update(
