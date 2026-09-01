@@ -91,7 +91,7 @@ The evaluation entry points are:
 
 Default data locations are `data/imc` and `data/megadepth`. Override them with `IMC_ROOT`, `MEGADEPTH_ROOT`, or `MEGADEPTH_SFM_ROOT`. Results are written under `outputs/paper/imc` and `outputs/paper/megadepth`.
 The MegaDepth script also accepts `15 22` and normalizes them to `0015 0022`.
-The tracking scripts run `--methods nn-jamma det-jamma` by default. They report average correct tracks from frame 1 to frame 5 using symmetric epipolar error `< 1e-3`, average FLOPs per pair, and average runtime per pair. The printed `x1e2` columns match the Fig. 6 axis scaling.
+The tracking scripts run `--methods nn-jamma det-jamma` by default. They report average correct tracks from frame 1 to frame 5 using symmetric epipolar error `< 1e-3`, average FLOPs per pair, and average runtime per pair. FLOPs are profiled once per method state and reused instead of being measured for every image pair. The printed `x1e2` columns match the Fig. 6 axis scaling.
 
 To add another tracker, add one decorated pair-matching function to `eval_tracking_common.py` that returns `PairMatchOutput`. The evaluator handles bag loading, track linking, epipolar scoring, FLOPs/time aggregation, and JSON output.
 

@@ -3,6 +3,7 @@
 import argparse
 import dataclasses
 import json
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -59,6 +60,7 @@ class EvalContext:
     device: torch.device
     models: Dict[str, PL_JamMa]
     configs: Dict[str, Any]
+    flops_cache: Dict[Tuple[str, bool], float]
 
 
 PAIR_MATCHERS: Dict[str, MethodSpec] = {}
@@ -274,16 +276,42 @@ def run_jamma_pair(
     if request.prev_state is not None:
         data["prev_data"] = request.prev_state
 
-    with torch.no_grad():
-        result, flops, runtime_ms = model(data)
+    flops_key = (method_name, request.prev_state is not None)
+    if flops_key not in context.flops_cache:
+        model._calc_flops_once(data)
+        context.flops_cache[flops_key] = float(model._flops_backbone + model._flops_matcher)
 
+    with torch.no_grad():
+        if not model.warmup:
+            for _ in range(30):
+                model.backbone(data)
+                model.matcher(data, mode="test")
+            model.warmup = True
+
+        if context.device.type == "cuda":
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            torch.cuda.synchronize()
+            start_event.record()
+            model.backbone(data)
+            model.matcher(data, mode="test")
+            end_event.record()
+            torch.cuda.synchronize()
+            runtime_ms = float(start_event.elapsed_time(end_event))
+        else:
+            start = time.perf_counter()
+            model.backbone(data)
+            model.matcher(data, mode="test")
+            runtime_ms = float((time.perf_counter() - start) * 1000.0)
+
+    result = data
     result.pop("prev_data", None)
     return PairMatchOutput(
         mkpts0=result["mkpts0_f_origin"],
         mkpts1=result["mkpts1_f_origin"],
         confidence=result.get("mconf_f"),
-        flops=float(flops),
-        runtime_ms=float(runtime_ms),
+        flops=context.flops_cache[flops_key],
+        runtime_ms=runtime_ms,
         state=result,
     )
 
@@ -612,7 +640,7 @@ def run_tracking_evaluation(
         available = ", ".join(sorted(PAIR_MATCHERS.keys()))
         raise ValueError(f"Unknown method(s): {unknown}. Available methods: {available}")
 
-    context = EvalContext(args=args, device=device, models={}, configs={})
+    context = EvalContext(args=args, device=device, models={}, configs={}, flops_cache={})
     bag_files = find_bag_files(subset_dir, args.bag_size)
     results: Dict[str, Dict[str, Any]] = {}
 
