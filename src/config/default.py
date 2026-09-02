@@ -33,6 +33,16 @@ _CN.JAMMA.DET.USE_DET = True
 _CN.JAMMA.DET.SEARCH_RADIUS = 5 * 2**0.5
 _CN.JAMMA.DET.FINE_THR = 0.1
 
+# If DeT produces fewer refined points than the initial base matches, fill the
+# missing slots with the highest-confidence base NN-JamMa matches.
+_CN.JAMMA.DET.FORCE_BASE_MATCHES = False
+
+# Inclusive valid bounds for DeT refinement centers on the half-resolution
+# feature grid: [x_min, y_min, x_max, y_max]. For 832 px inputs this grid is
+# 416x416, so [3, 3, 413, 413] keeps the 7x7 local patch lookup inside the
+# usable border region.
+_CN.JAMMA.DET.REFINE_BOUNDS = [3, 3, 413, 413]
+
 _CN.JAMMA.LOSS = CN()
 _CN.JAMMA.LOSS.COARSE_WEIGHT = 1.0
 _CN.JAMMA.LOSS.FOCAL_ALPHA = 0.25

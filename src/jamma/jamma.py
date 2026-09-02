@@ -227,6 +227,9 @@ class JamMa(nn.Module):
         self.fine_matching = FineSubMatching(config, self.profiler)
         self.use_det = self.config["det"]["use_det"]
         self.search_radius = self.config["det"]["search_radius"]
+        self.det_refine_bounds = tuple(
+            self.config["det"].get("refine_bounds", [3, 3, 413, 413])
+        )
 
         self.detref = DetRefine(
             search_radius=self.search_radius,
@@ -464,10 +467,7 @@ class JamMa(nn.Module):
                         now_confs_sorted,
                         data["feat_f0_unfold_st1"],
                         data["feat_f1_unfold_st1"],
-                        3,
-                        3,
-                        413,
-                        413,
+                        *self.det_refine_bounds,
                     )
 
                     feat_f_flex = torch.cat(

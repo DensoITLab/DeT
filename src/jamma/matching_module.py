@@ -403,6 +403,7 @@ class FineSubMatching(nn.Module):
         self.profiler = profiler
         self.use_det = config["det"]["use_det"]
         self.fine_det_thr = config["det"]["fine_thr"]
+        self.force_base_matches = bool(config["det"].get("force_base_matches", False))
         self.inv_sqrt_df = dim_f ** -0.5  # precompute for normalization
 
     def forward(
@@ -731,10 +732,7 @@ class FineSubMatching(nn.Module):
         mconf_det = mconf_det[valid_mask]
         mconf_det = mconf_det + diff_points_conf
 
-        #mconf_det = mconf_det * diff_points_conf
-
-        force = False
-        if num_missing and force:
+        if num_missing > 0 and self.force_base_matches:
             conf_sorted_idx = torch.argsort(data["mconf_f"], descending=True)
             add_idx = conf_sorted_idx[:num_missing]
 
