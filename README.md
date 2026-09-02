@@ -4,6 +4,10 @@
 ![conference](https://img.shields.io/badge/ECCV-2026-blue)
 [![base](https://img.shields.io/badge/base-JamMa-6f42c1)](https://github.com/leoluxxx/JamMa)
 
+<p align="center">
+  <img src="assets/overview.png" alt="Detect by Track overview" width="100%">
+</p>
+
 Official PyTorch implementation of **Detect by Track: Making Detector-Free Matcher Trackable**.
 
 ## Installation
