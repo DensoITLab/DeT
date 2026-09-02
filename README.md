@@ -21,7 +21,7 @@ pip install mamba-ssm==2.0.3
 
 ## Checkpoint
 
-Place the checkpoint at `weights/jamma.ckpt`.
+Place the DeT checkpoint at `weights/jamma.ckpt`. The checkpoint format follows [JamMa](https://github.com/leoluxxx/JamMa).
 
 ## Demo
 
