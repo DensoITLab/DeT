@@ -97,7 +97,7 @@ def read_color(path: Path, resize: Optional[int], divisor: int, padding: bool):
     new_width, new_height = get_divisible_wh(new_width, new_height, divisor)
 
     scale = torch.tensor([width / new_width, height / new_height], dtype=torch.float)
-    image = image.resize((new_width, new_height), Image.BICUBIC)
+    image = image.resize((new_width, new_height), Image.Resampling.BICUBIC)
     image_np = np.asarray(image, dtype=np.float32).transpose(2, 0, 1) / 255.0
 
     mean = np.asarray([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)

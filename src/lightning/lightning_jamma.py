@@ -1,14 +1,11 @@
 from collections import defaultdict
 import pprint
+import time
 from loguru import logger
 from pathlib import Path
-import copy
-from PIL import Image, ImageDraw
-import tempfile
 
 import torch
 from torch import nn
-import torch.nn.functional as F
 import numpy as np
 import pytorch_lightning as pl
 from matplotlib import pyplot as plt
@@ -27,8 +24,7 @@ from src.utils.comm import gather, all_gather
 from src.utils.misc import lower_config, flattenList
 from src.utils.profiler import PassThroughProfiler
 from thop import profile
-from src.utils.plotting import make_matching_figures
-from src.utils.dataset import read_megadepth_depth, read_megadepth_color
+
 
 class MatcherWrapper(nn.Module):
     def __init__(self, matcher):
@@ -69,17 +65,17 @@ class PL_JamMa(pl.LightningModule):
         
         if _config['jamma']['use_compile']:
             self.matcher = torch.compile(
-            self.matcher,
-            mode="default",
-            fullgraph=False,
-            dynamic=False,
-        )
+                self.matcher,
+                mode="default",
+                fullgraph=False,
+                dynamic=False,
+            )
             
 
         # Testing
         self.dump_dir = dump_dir
-        self.start_event = torch.cuda.Event(enable_timing=True)
-        self.end_event = torch.cuda.Event(enable_timing=True)
+        self.start_event = None
+        self.end_event = None
         self.total_ms = 0
         self.total_flops = 0
         self._flops_backbone = None
@@ -272,68 +268,41 @@ class PL_JamMa(pl.LightningModule):
             self.log(f'auc@{thr}', torch.tensor(np.mean(multi_val_metrics[f'auc@{thr}'])))  # ckpt monitors on this
         logger.info(pprint.pformat(val_metrics_4tb))
 
-    def test_step(self, batch, batch_idx):
-        with torch.autocast(enabled=self.config.JAMMA.MP, device_type='cuda'):
-            det_eval = True
-            device = 'cuda'
-            if det_eval:
-                img0_path = "data/megadepth/" + batch['pair_names'][0][0]
-                with Image.open(img0_path) as im:
-                    w, h = im.size
-
-                    new_im = im.copy()
-                    draw = ImageDraw.Draw(new_im)
-
-                    margin = 8
-
-                    draw.rectangle([0, 0, w, margin], fill=(0, 0, 0))
-                    draw.rectangle([0, h - margin, w, h], fill=(0, 0, 0))
-                    draw.rectangle([0, 0, margin, h], fill=(0, 0, 0))
-                    draw.rectangle([w - margin, 0, w, h], fill=(0, 0, 0))
-
-                    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-                    new_im.save(tmp.name)
-
-                tent_imagec_0, tent_scale0, tent_mask0, tent_prepad_size0,_,_ = read_megadepth_color(tmp.name, 832, 8, padding=True)
-                tent_mask0 = F.interpolate(tent_mask0[None, None].float(), scale_factor=0.125, mode='nearest', recompute_scale_factor=False)[0].bool()
-                tent_imagec_1 = batch['imagec_0']
-                tent_mask1 = batch['mask0']
-                tent_scale1 = batch['scale0']
-                tent_prepad_size1 = batch['prepad_size0']
-
-                first_batch = copy.deepcopy(batch)
-
-                first_batch['imagec_0'] = tent_imagec_0.to(device)
-                first_batch['imagec_1'] = tent_imagec_1.to(device)
-                first_batch['scale0'] = tent_scale0.unsqueeze(0).to(device)
-                first_batch['scale1'] = tent_scale1.to(device)
-                first_batch['prepad_size0'] = tent_prepad_size0.unsqueeze(0).to(device)
-                first_batch['prepad_size1'] = tent_prepad_size1.to(device)
-                first_batch['mask0'] = tent_mask0.to(device)
-                first_batch['mask1'] = tent_mask1.to(device)
-                first_batch['custom_fine_thr'] = 0.1
-                self.backbone(first_batch)
-                self.matcher(first_batch)
-
-                batch['prev_data'] = first_batch
-                batch['algo_res'] = True
-                batch['custom_fine_thr'] = 0.1
-                batch['custom_fine_flex_thr'] = 0.1
-
-            self.start_event.record()
-            with self.profiler.profile("Backbone"):
-                flops1, _ = profile(self.backbone, inputs=(batch,), verbose=False)
-
-            with self.profiler.profile("Matcher"):
-                flops2, _ = profile(self.matcher, inputs=(batch,), verbose=False)
-            self.end_event.record()
-            total_flops = flops1 + flops2
-            self.total_flops += total_flops
+    def _run_timed_inference(self, batch):
+        use_cuda_timer = batch['imagec_0'].is_cuda and torch.cuda.is_available()
+        if use_cuda_timer:
+            if self.start_event is None or self.end_event is None:
+                self.start_event = torch.cuda.Event(enable_timing=True)
+                self.end_event = torch.cuda.Event(enable_timing=True)
             torch.cuda.synchronize()
-            self.total_ms += self.start_event.elapsed_time(self.end_event)
-            batch['runtime'] = self.start_event.elapsed_time(self.end_event)
+            self.start_event.record()
+        else:
+            start = time.perf_counter()
 
-        ret_dict, rel_pair_names = self._compute_metrics(batch)
+        with self.profiler.profile("Backbone"):
+            self.backbone(batch)
+
+        with self.profiler.profile("Matcher"):
+            self.matcher(batch, mode='test')
+
+        if use_cuda_timer:
+            self.end_event.record()
+            torch.cuda.synchronize()
+            return self.start_event.elapsed_time(self.end_event)
+
+        return (time.perf_counter() - start) * 1000.0
+
+    def test_step(self, batch, batch_idx):
+        device_type = 'cuda' if batch['imagec_0'].is_cuda else 'cpu'
+        with torch.autocast(enabled=self.config.JAMMA.MP, device_type=device_type):
+            if self._flops_backbone is None or self._flops_matcher is None:
+                self._calc_flops_once(batch)
+            total_flops = self._flops_backbone + self._flops_matcher
+            self.total_flops += total_flops
+            batch['runtime'] = self._run_timed_inference(batch)
+            self.total_ms += batch['runtime']
+
+        ret_dict, _ = self._compute_metrics(batch)
 
         with self.profiler.profile("dump_results"):
             if self.dump_dir is not None:
@@ -372,13 +341,22 @@ class PL_JamMa(pl.LightningModule):
             logger.info(self.profiler.summary())
             val_metrics_4tb = aggregate_metrics_test(metrics, self.config.TRAINER.EPI_ERR_THR, config=self.config)
             logger.info('\n' + pprint.pformat(val_metrics_4tb))
-            logger.info('Averaged matching time over 1500 pairs: {:.2f} ms'.format(self.total_ms / 1500))
-            logger.info('Averaged FLOPs per pair: {:.2f} GMac'.format(self.total_flops / 1500 / 1e9))
+            num_pairs = max(len(metrics['identifiers']), 1)
+            logger.info(
+                'Averaged matching time over {} pairs: {:.2f} ms'.format(
+                    num_pairs,
+                    self.total_ms / num_pairs,
+                )
+            )
+            logger.info(
+                'Averaged FLOPs per pair: {:.2f} GMac'.format(
+                    self.total_flops / num_pairs / 1e9
+                )
+            )
             if self.dump_dir is not None:
                 np.save(Path(self.dump_dir) / 'JAMMA_pred_eval', dumps)
 
     def _calc_flops_once(self, data):
-
         self.backbone.eval()
         if hasattr(self.matcher, "eval"):
             self.matcher.eval()
@@ -395,26 +373,16 @@ class PL_JamMa(pl.LightningModule):
         self._flops_matcher = flops_m
         logger.info(f"[FLOPs] backbone: {flops_b:,}, matcher: {flops_m:,}")
 
-
     def forward(self, data):
-        self._calc_flops_once(data)
+        if self._flops_backbone is None or self._flops_matcher is None:
+            self._calc_flops_once(data)
         if not self.warmup:
             logger.info("Warming up...")
-            # warm-up
             for _ in range(30):
                 self.backbone(data)
                 self.matcher(data, mode='test')
             self.warmup = True
             logger.info("Warm-up done.")
-        self.start_event.record()
-        with self.profiler.profile("Backbone"):
-            self.backbone(data)
-                
-
-        with self.profiler.profile("Matcher"):
-            self.matcher(data, mode='test')
-        self.end_event.record()
         total_flops = self._flops_backbone + self._flops_matcher
-        torch.cuda.synchronize()
-        run_time = self.start_event.elapsed_time(self.end_event)
+        run_time = self._run_timed_inference(data)
         return data, total_flops, run_time
